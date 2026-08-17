@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { handleResolve, cacheHeader, CORS_HEADERS } from './lib/resolve-core.js';
+import { handleRoute, CORS } from './lib/route-proxy.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +43,22 @@ const server = createServer(async (req, res) => {
       'Cache-Control': cacheHeader(cacheSeconds)
     });
     return res.end(JSON.stringify(body, null, 2));
+  }
+
+  if (url.pathname === '/api/route') {
+    for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
+    if (req.method === 'OPTIONS') return res.writeHead(204).end();
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const headers = Object.assign({}, req.headers);
+    const out = await handleRoute({
+      method: req.method, origin: req.headers.origin,
+      host: req.headers.host, headers, rawBody: raw
+    }, process.env);
+    for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, v);
+    if (out.status === 204 || out.body === null) return res.writeHead(204).end();
+    res.writeHead(out.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify(out.body, null, 2));
   }
 
   /* static files, confined to this directory */

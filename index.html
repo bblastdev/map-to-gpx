@@ -1300,6 +1300,7 @@ globalThis.MapToGPX = (function () {
 
   const Engine = {
     key: '',
+    proxy: '',
     resolver: '/api/resolve',
     hostChoice: 'auto',
     orsBase: null,
@@ -1431,6 +1432,29 @@ globalThis.MapToGPX = (function () {
       if (opts && opts.alternatives && coords.length === 2) {
         payload.alternative_routes = { target_count: 3, weight_factor: 1.6, share_factor: 0.6 };
       }
+      /* No key of your own: go through this site's proxy, which spends the
+         deployment's key behind rate limits. A pasted key always wins — it
+         routes straight to ORS and is not subject to the shared limits. */
+      if (!this.key && this.proxy) {
+        let out;
+        try {
+          out = await fetchJson(this.proxy, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(Object.assign({ profile }, payload))
+          }, 45000);
+        } catch (err) {
+          throw new RoutingError(
+            'This site\'s routing service could not be reached.',
+            err && err.name === 'AbortError'
+              ? 'The request timed out. Try again, or paste your own key in Settings.'
+              : 'Check your connection, or paste your own OpenRouteService key in Settings.'
+          );
+        }
+        if (out.res.ok && out.json && out.json.features && out.json.features.length) return out.json;
+        throw this.proxyError(out, coords, profile);
+      }
+
       const init = {
         method: 'POST',
         headers: {
@@ -1542,6 +1566,20 @@ globalThis.MapToGPX = (function () {
 
       return new RoutingError('Routing failed: ' + msg,
         'HTTP ' + status + ' from ' + (this.orsBase || 'OpenRouteService') + '.', false, detail);
+    },
+
+    /**
+     * The proxy answers with either its own guard message ({error, fix}) or
+     * ORS's error passed straight through — tell them apart so the specific
+     * 2004/2009/2010 handling still applies.
+     */
+    proxyError(out, coords, profile) {
+      const j = out.json;
+      if (j && typeof j.error === 'string') {
+        return new RoutingError(j.error, j.fix || '', false,
+          'shared routing key: HTTP ' + out.res.status);
+      }
+      return this.orsHttpError(out, coords, profile);
     },
 
     featureToPoints(feature) {
@@ -1917,7 +1955,7 @@ globalThis.MapToGPX = (function () {
   /* ── state ──────────────────────────────────────────────────────────── */
 
   const state = {
-    theme: 'dark', link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve',
+    theme: 'dark', link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
     copyLabel: 'Copy GPX', shareLabel: 'Share link'
@@ -2233,8 +2271,12 @@ globalThis.MapToGPX = (function () {
   }
   function stopClock() { clearInterval(clock); }
 
+  /* Routing is possible with a pasted key, or through this site's shared one. */
+  const canRoute = () => !!state.key.trim() || !!state.proxy;
+
   function engine() {
     E.key = state.key.trim();
+    E.proxy = state.proxy;
     E.resolver = state.resolver;
     E.hostChoice = state.host;
     return E;
@@ -2245,7 +2287,7 @@ globalThis.MapToGPX = (function () {
     /* No key: open Settings and clear any stale error — leaving the last
        failure on screen next to a freshly-opened key field reads as if the
        key itself caused it. */
-    if (!state.key.trim()) { state.error = null; state.settingsOpen = true; return render(); }
+    if (!canRoute()) { state.error = null; state.settingsOpen = true; return render(); }
     const input = (state.link || '').trim();
     if (!input) return;
     Object.assign(state, { busy: true, error: null, step: 'read', progressMsg: 'Reading the link…', result: null });
@@ -2266,7 +2308,7 @@ globalThis.MapToGPX = (function () {
     /* No key: open Settings and clear any stale error — leaving the last
        failure on screen next to a freshly-opened key field reads as if the
        key itself caused it. */
-    if (!state.key.trim()) { state.error = null; state.settingsOpen = true; return render(); }
+    if (!canRoute()) { state.error = null; state.settingsOpen = true; return render(); }
     if (state.busy) return;
     Object.assign(state, { busy: true, error: null, step: 'route', progressMsg: 'Rerouting…' });
     render();
@@ -2476,7 +2518,7 @@ globalThis.MapToGPX = (function () {
     /* once a route exists the download is the primary action — two filled
        accent buttons on one screen is one too many */
     cta.classList.toggle('secondary', !!r);
-    $('key-prompt').hidden = !!s.key.trim();
+    $('key-prompt').hidden = canRoute();
 
     /* busy */
     $('card-busy').hidden = !s.busy;
@@ -2682,7 +2724,9 @@ globalThis.MapToGPX = (function () {
     $('key-note').textContent = 'Loaded from config.local.js on this machine. Delete that file before deploying ' +
       'publicly — anything in page source can be read by whoever loads it.';
   }
-  state.resolver = (location.protocol === 'http:' || location.protocol === 'https:') ? '/api/resolve' : '';
+  const served = location.protocol === 'http:' || location.protocol === 'https:';
+  state.resolver = served ? '/api/resolve' : '';
+  state.proxy = served ? '/api/route' : '';
 
   const shared = readShare();
   if (shared) {

@@ -181,17 +181,31 @@ the ride built along whichever you choose.
 
 ## Deploying
 
-### Before you publish: whose API key?
+### Whose API key?
 
-The app is built so **each visitor pastes their own OpenRouteService key**, held in memory for
-their tab. That is the safe default — your quota is never at risk — but it does mean anyone you
-share the link with has to sign up for a free key before their first route.
+Both work, and the app picks automatically:
 
-If you would rather visitors used it without signing up, the key has to move server-side: add a
-function that holds *your* key in an environment variable and forwards routing requests to ORS,
-then point the app at it. Be clear-eyed about the trade: a public endpoint spending your key is
-one scraper away from your 2 000/day being gone, so it needs at minimum a rate limit and an
-origin check. Not built here — it is a deliberate choice, not an oversight.
+| | |
+| --- | --- |
+| **Visitor pasted a key in Settings** | routes straight to ORS on their own quota, no limits from us |
+| **Visitor pasted nothing** | routes through `/api/route`, spending the deployment's `ORS_KEY` under the guards below |
+
+Set `ORS_KEY` and people can just paste a link and go. Leave it unset and the proxy answers 503
+with "paste your own key in Settings", which is the original bring-your-own behaviour.
+
+**A public endpoint spending your key needs guarding**, so `lib/route-proxy.js` refuses anything
+it cannot vouch for:
+
+- **Same-origin only** — the browser's `Origin` must match the deployment, so another site
+  cannot point its own front-end at your key.
+- **Profile allowlist and shape limits** — no arbitrary ORS endpoint, 2–25 coordinates, 32 KB body.
+- **Rate limits** — per-IP per hour (`RATE_PER_IP`, default 20) and a global daily ceiling
+  (`RATE_PER_DAY`, default 1200, under ORS's 2 000 so your own use still fits).
+
+Counters live in Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set — run
+`supabase/schema.sql` once to create the table and its atomic `bump_counter` function. Without
+Supabase the limiter falls back to per-instance memory, which leaks across serverless instances;
+the `X-RateLimit-Backend` response header tells you which is in play.
 
 > ⚠ **Never deploy `config.local.js`.** It holds your key in plain text, `netlify.toml`
 > publishes the whole directory, and the Netlify CLI does *not* consult `.gitignore` for it.
@@ -237,6 +251,9 @@ paste the expanded URL instead. If you have the function deployed somewhere else
 
 | Variable | Why |
 | --- | --- |
+| `ORS_KEY` | Your OpenRouteService key. Set it and visitors need no key of their own; leave it unset for bring-your-own. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Shared rate-limit counters for `/api/route`. Optional but recommended once the site is public. |
+| `RATE_PER_IP`, `RATE_PER_DAY` | Override the default 20/hour/IP and 1200/day ceilings. |
 | `NOMINATIM_UA` | Your contact address, e.g. `MyRouteApp/1.0 (you@example.com)`. [Nominatim's usage policy](https://operations.osmfoundation.org/policies/nominatim/) requires a genuine identifier; the default value is a placeholder. |
 
 ---
