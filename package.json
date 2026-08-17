@@ -1,0 +1,29 @@
+{
+  "name": "map-to-gpx",
+  "version": "1.0.0",
+  "description": "Turn a Google Maps directions link into a GPX file for watches, bike computers, Strava and Komoot.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'",
+    "dev": "node server.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "predeploy:netlify": "node scripts/preflight.mjs",
+    "deploy:netlify": "netlify deploy --prod",
+    "predeploy:vercel": "node scripts/preflight.mjs",
+    "deploy:vercel": "vercel --prod"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "gpx",
+    "google-maps",
+    "openrouteservice",
+    "cycling",
+    "running",
+    "strava",
+    "komoot"
+  ],
+  "license": "MIT"
+}

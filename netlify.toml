@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+  # Nothing to build — index.html is the whole app.
+  command = "echo 'static site, no build step'"
+
+# netlify/functions/resolve.js also declares `config.path = "/api/resolve"`,
+# which is enough on modern Netlify. This redirect keeps older setups working.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

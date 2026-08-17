@@ -1,0 +1,11 @@
+node_modules/
+.netlify/
+.vercel/
+.DS_Store
+*.gpx
+!test/fixtures/*.gpx
+.env
+.env.local
+
+# Local API key — must never be committed or deployed publicly
+config.local.js
