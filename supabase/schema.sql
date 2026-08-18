@@ -44,4 +44,12 @@ begin
 end;
 $$;
 
+-- Lock the function down to the one role that should call it.
+--
+-- Order matters here. Postgres grants EXECUTE on new functions to PUBLIC, and
+-- service_role has no grant of its own -- it inherits that one. So revoking
+-- from PUBLIC takes the permission away from service_role too, and the proxy
+-- gets "42501 permission denied for function bump_counter". Revoke first,
+-- then grant back explicitly.
 revoke all on function public.bump_counter(text, integer) from public, anon, authenticated;
+grant execute on function public.bump_counter(text, integer) to service_role;
