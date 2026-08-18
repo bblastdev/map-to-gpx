@@ -1,5 +1,15 @@
+# Never deploy the local key file.
 config.local.js
+
+# Dev-only and Netlify-only files: nothing on Vercel imports these.
 node_modules/
 test/
 scripts/
 server.mjs
+netlify/
+netlify.toml
+supabase/
+.claude/
+
+# NOTE: lib/ must stay. api/*.js import lib/*.js, and Vercel traces those
+# imports into the function bundle — ignoring it would break the functions.
