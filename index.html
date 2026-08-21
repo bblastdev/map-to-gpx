@@ -146,6 +146,24 @@
     padding: 8.2px 0 11.5px; appearance: none; outline: none;
   }
   .field:focus { border-bottom-color: var(--acc); outline: none; }
+  /* The clear control sits over the field's right end rather than beside it,
+     so the rule under the input stays one unbroken line. The field reserves
+     room for it only while it is there, so a short link is never padded
+     against nothing. */
+  .fieldwrap { position: relative; display: flex; }
+  .fieldwrap .clear {
+    position: absolute; right: 0; top: 0; bottom: 3px;
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; padding: 0; border: 0; cursor: pointer;
+    background: var(--surf); color: var(--ink3);
+  }
+  .fieldwrap .clear:hover { color: var(--acc); }
+  .fieldwrap:has(.clear:not([hidden])) .field { padding-right: 34px; }
+  /* A mouse can hit 30px; a thumb wants more. */
+  @media (pointer: coarse) {
+    .fieldwrap .clear { width: 44px; }
+    .fieldwrap:has(.clear:not([hidden])) .field { padding-right: 48px; }
+  }
 
   .profiles { display: flex; gap: 2px; }
   .profiles button {
@@ -423,8 +441,13 @@
           <button class="linkbtn" id="btn-example"><svg class="ic ic-b" aria-hidden="true"><use href="#b-lightning"/></svg>Example</button>
         </div>
         <label class="sr" for="link">Google Maps directions link</label>
-        <input id="link" class="field" type="text" inputmode="url" autocomplete="off" autocapitalize="off"
-               spellcheck="false" enterkeyhint="go" placeholder="google.com/maps/dir/…">
+        <div class="fieldwrap">
+          <input id="link" class="field" type="text" inputmode="url" autocomplete="off" autocapitalize="off"
+                 spellcheck="false" enterkeyhint="go" placeholder="google.com/maps/dir/…">
+          <button class="clear" id="btn-clear" hidden title="Clear the link" aria-label="Clear the link">
+            <svg class="ic ic-c" aria-hidden="true"><use href="#b-x"/></svg>
+          </button>
+        </div>
         <div class="hint">Long or maps.app.goo.gl short links</div>
       </div>
 
@@ -2539,6 +2562,7 @@ globalThis.MapToGPX = (function () {
     const s = state, r = s.result;
 
     /* input card */
+    $('btn-clear').hidden = !s.link;
     for (const b of $('profiles').children) b.setAttribute('aria-pressed', String(b.dataset.id === s.profile));
     const cta = $('btn-convert');
     cta.disabled = s.busy || !s.link.trim();
@@ -2722,6 +2746,14 @@ globalThis.MapToGPX = (function () {
   $('link').addEventListener('input', (e) => { state.link = e.target.value; render(); });
   $('link').addEventListener('keydown', (e) => { if (e.key === 'Enter') convert(); });
   $('btn-example').addEventListener('click', () => { state.link = EXAMPLE; $('link').value = EXAMPLE; render(); });
+  /* Clearing leaves any existing result on screen — it is still the route you
+     built, and the map and GPX stay usable while you paste the next link. */
+  $('btn-clear').addEventListener('click', () => {
+    state.link = '';
+    $('link').value = '';
+    render();
+    $('link').focus();
+  });
   $('btn-convert').addEventListener('click', convert);
   $('btn-download').addEventListener('click', download);
   $('btn-copy').addEventListener('click', copyGpx);
