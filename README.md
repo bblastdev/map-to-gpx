@@ -114,6 +114,9 @@ let malformed GPX pass.
 A two-pane workspace: controls and results on the left, map and elevation profile on the right,
 stacking to a single column on a phone. Dark only — there is no light theme and no switch.
 
+The footer credits OpenRouteService and nothing else: their terms require it wherever their
+results are shown, and Leaflet's own control already names OpenStreetMap and CARTO.
+
 The look is editorial rather than app-like: flat colour blocks with no borders, no corner radii
 and no shadows, separated by 2px gaps. Those gaps show `--bg` (`#0b0b0b`) and are the only rules
 on the page. Panels are `#141414`, and the accent throughout is Strava-orange `#fc4c02`.
@@ -212,6 +215,12 @@ Both work, and the app picks automatically:
 
 Set `ORS_KEY` and people can just paste a link and go. Leave it unset and the proxy answers 503
 with "paste your own key in Settings", which is the original bring-your-own behaviour.
+
+**Settings has no permanent button.** Nothing on the page opens it until something goes wrong
+that a key would fix — the shared key's daily cap, the per-IP limit, a rejected key, a deployment
+with none configured. Every one of those messages contains the word "key" and nothing else does,
+so that word is the trigger: the error card grows an "Add your own key" action that opens the
+drawer with the field focused. A visitor who never hits a limit never sees the configuration.
 
 **A public endpoint spending your key needs guarding**, so `lib/route-proxy.js` refuses anything
 it cannot vouch for:

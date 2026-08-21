@@ -199,6 +199,15 @@
   .fixes { display: flex; flex-direction: column; gap: 8.2px; }
   .fix { display: flex; gap: 9px; align-items: flex-start; font: 400 11.5px/1.55 var(--font); color: var(--panelink2); }
   .fix .ic { color: var(--acc); margin-top: 4px; }
+  /* The only route into Settings. It shows up when the error is one a key
+     would actually solve, so the configuration stays out of a visitor's way
+     until the moment it is the answer. */
+  .err-key {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    min-height: 38px; margin-top: 13.1px; border: 0; background: var(--acid); color: var(--black);
+    font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer;
+  }
+  .err-key .ic { letter-spacing: 0; }
   .tech { margin-top: 13.1px; border-top: 1px solid var(--panelline); padding-top: 11.5px; }
   .tech summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6.6px; font: 700 9px/1 var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--panelink2); }
   .tech summary .ic { letter-spacing: 0; }
@@ -289,12 +298,6 @@
   /* A short rail would otherwise end mid-column and show the ground below the
      footer. This carries the panel colour to the bottom instead. */
   .filler { flex: 1; min-height: 0; background: var(--fill); }
-  .footlink {
-    display: flex; align-items: center; gap: 6.6px; border: 0; background: var(--surf3); color: var(--ink);
-    padding: 9px 13.1px; margin-bottom: 13.1px; font: 700 9px/1 var(--font);
-    letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
-  }
-  .footlink .ic { letter-spacing: 0; }
 
   /* ── map pane ───────────────────────────────────────────────────────── */
   .mapwrap { position: relative; flex: 1; min-height: 164px; }
@@ -352,7 +355,6 @@
 -->
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
   <symbol id="b-path" viewBox="0 0 256 256"><path d="M200,164a36.07,36.07,0,0,0-33.94,24H72a28,28,0,0,1,0-56h96a44,44,0,0,0,0-88H72a12,12,0,0,0,0,24h96a20,20,0,0,1,0,40H72a52,52,0,0,0,0,104h94.06A36,36,0,1,0,200,164Zm0,48a12,12,0,1,1,12-12A12,12,0,0,1,200,212Z"/></symbol>
-  <symbol id="b-sliders-horizontal" viewBox="0 0 256 256"><path d="M40,92H70.06a36,36,0,0,0,67.88,0H216a12,12,0,0,0,0-24H137.94a36,36,0,0,0-67.88,0H40a12,12,0,0,0,0,24Zm64-24A12,12,0,1,1,92,80,12,12,0,0,1,104,68Zm112,96H201.94a36,36,0,0,0-67.88,0H40a12,12,0,0,0,0,24h94.06a36,36,0,0,0,67.88,0H216a12,12,0,0,0,0-24Zm-48,24a12,12,0,1,1,12-12A12,12,0,0,1,168,188Z"/></symbol>
   <symbol id="b-link-simple" viewBox="0 0 256 256"><path d="M87.5,151.52l64-64a12,12,0,0,1,17,17l-64,64a12,12,0,0,1-17-17Zm131-114a60.08,60.08,0,0,0-84.87,0L103.51,67.61a12,12,0,0,0,17,17l30.07-30.06a36,36,0,0,1,50.93,50.92L171.4,135.52a12,12,0,1,0,17,17l30.08-30.06A60.09,60.09,0,0,0,218.45,37.55ZM135.52,171.4l-30.07,30.08a36,36,0,0,1-50.92-50.93l30.06-30.07a12,12,0,0,0-17-17L37.55,133.58a60,60,0,0,0,84.88,84.87l30.06-30.07a12,12,0,0,0-17-17Z"/></symbol>
   <symbol id="b-lightning" viewBox="0 0 256 256"><path d="M219.71,117.38a12,12,0,0,0-7.25-8.52L161.28,88.39l10.59-70.61a12,12,0,0,0-20.64-10l-112,120a12,12,0,0,0,4.31,19.33l51.18,20.47L84.13,238.22a12,12,0,0,0,20.64,10l112-120A12,12,0,0,0,219.71,117.38ZM113.6,203.55l6.27-41.77a12,12,0,0,0-7.41-12.92L68.74,131.37,142.4,52.45l-6.27,41.77a12,12,0,0,0,7.41,12.92l43.72,17.49Z"/></symbol>
   <symbol id="b-key" viewBox="0 0 256 256"><path d="M196,76a16,16,0,1,1-16-16A16,16,0,0,1,196,76Zm48,22.74A84.3,84.3,0,0,1,160.11,180H160a83.52,83.52,0,0,1-23.65-3.38l-7.86,7.87A12,12,0,0,1,120,188H108v12a12,12,0,0,1-12,12H84v12a12,12,0,0,1-12,12H40a20,20,0,0,1-20-20V187.31a19.86,19.86,0,0,1,5.86-14.14l53.52-53.52A84,84,0,1,1,244,98.74ZM202.43,53.57A59.48,59.48,0,0,0,158,36c-32,1-58,27.89-58,59.89a59.69,59.69,0,0,0,4.2,22.19,12,12,0,0,1-2.55,13.21L44,189v23H60V200a12,12,0,0,1,12-12H84V176a12,12,0,0,1,12-12h19l9.65-9.65a12,12,0,0,1,13.22-2.55A59.58,59.58,0,0,0,160,156h.08c32,0,58.87-26.07,59.89-58A59.55,59.55,0,0,0,202.43,53.57Z"/></symbol>
@@ -450,6 +452,9 @@
         <div class="err-body">
           <div class="eyebrow lg" style="margin-bottom:9.8px">Try this</div>
           <div class="fixes" id="err-fixes"></div>
+          <button class="err-key" id="err-key" hidden>
+            <svg class="ic ic-c" aria-hidden="true"><use href="#b-key"/></svg>Add your own key
+          </button>
           <details class="tech" id="err-tech" hidden>
             <summary><svg class="ic ic-b" aria-hidden="true"><use href="#b-code"/></svg>Technical detail</summary>
             <div id="err-detail"></div>
@@ -524,17 +529,11 @@
         </div>
       </div>
 
+      <!-- OpenRouteService's terms require crediting them wherever their
+           results are shown, and this is the only place that does. Leaflet's
+           own control already names OpenStreetMap and CARTO. -->
       <footer class="foot">
-        <!-- The only way into Settings: the masthead is the wordmark alone. -->
-        <button class="footlink" id="btn-settings">
-          <svg class="ic ic-b" aria-hidden="true"><use href="#b-sliders-horizontal"/></svg>Settings
-        </button>
-        <div>
-        Routing <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer">OpenRouteService</a> ·
-        geocoding <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noopener noreferrer">Nominatim</a> ·
-        map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors.
-        Google Maps links are parsed locally for their stops only — no Google routing data is used or exported.
-        </div>
+        Routing <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer">OpenRouteService</a>
       </footer>
       <div class="filler"></div>
     </section>
@@ -2510,6 +2509,10 @@ globalThis.MapToGPX = (function () {
           row.append(icon('b-arrow-elbow-down-right', 'ic-b'), el('span', null, t));
           fixes.appendChild(row);
         });
+      /* Every message that a key would fix -- the shared key's daily cap, the
+         per-IP limit, a rejected key, a deployment with none configured --
+         names one. Nothing else does, so the word is the signal. */
+      $('err-key').hidden = !/\bkey\b/i.test((s.error.fix || '') + ' ' + (s.error.message || ''));
       $('err-tech').hidden = !s.error.detail;
       $('err-detail').textContent = s.error.detail || '';
     }
@@ -2655,8 +2658,9 @@ globalThis.MapToGPX = (function () {
   $('btn-add').addEventListener('click', () => { state.addMode = !state.addMode; render(); });
   $('btn-fit').addEventListener('click', () => { needsFit = true; fitLater(); });
 
-  $('key-prompt').addEventListener('click', () => { state.settingsOpen = true; render(); $('key').focus(); });
-  $('btn-settings').addEventListener('click', () => { state.settingsOpen = true; render(); });
+  const openSettings = () => { state.settingsOpen = true; render(); $('key').focus(); };
+  $('key-prompt').addEventListener('click', openSettings);
+  $('err-key').addEventListener('click', openSettings);
   $('btn-close-settings').addEventListener('click', () => { state.settingsOpen = false; render(); });
   $('scrim').addEventListener('click', () => { state.settingsOpen = false; render(); });
   document.addEventListener('keydown', (e) => {
