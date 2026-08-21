@@ -86,6 +86,9 @@
   .leaflet-control-attribution a { color: var(--panelink) !important; border: 0; }
   .leaflet-bar { border: 0 !important; }
   .leaflet-bar a { background: var(--panel) !important; color: var(--panelink) !important; border: 0 !important; border-bottom: 2px solid var(--panelink) !important; border-radius: 0 !important; }
+  /* the border separates the two buttons, so the last one has nothing to
+     separate itself from */
+  .leaflet-bar a:last-child { border-bottom: 0 !important; }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--panelink); border-radius: 0; box-shadow: none; }
   .leaflet-popup-content { font: 600 10.7px/1.4 var(--font); margin: 8.2px 9.8px; }
   .leaflet-tooltip { border-radius: 0 !important; border: 0 !important; background: var(--panel) !important; color: var(--panelink) !important; box-shadow: none !important; font: 600 9.8px/1 var(--font) !important; }
@@ -107,11 +110,6 @@
   }
   .brand .mark { color: var(--acc); }
   .brand .name { font: 800 16.4px/1 var(--font); letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; }
-  .brand .tag {
-    flex: 0 1 auto; min-width: 0; font: 600 9.8px/1.3 var(--font); letter-spacing: .15em;
-    text-transform: uppercase; color: var(--barink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  @media (max-width: 720px) { .brand .tag { display: none; } }
   @media (max-width: 400px) { .brand { padding: 0 11.5px; gap: 8.2px; } .brand .name { font-size: 13.9px; } }
 
   /* ── layout ─────────────────────────────────────────────────────────── */
@@ -404,7 +402,6 @@
     <div class="brand">
       <svg class="ic ic-j mark" aria-hidden="true"><use href="#f-path"/></svg>
       <div class="name">Map to GPX</div>
-      <div class="tag">Google Maps stops · routed on OpenStreetMap</div>
     </div>
   </header>
 
@@ -561,7 +558,7 @@
           <div id="readout"></div>
         </div>
         <div class="elev-body">
-          <svg id="chart" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img" aria-label="Elevation profile"></svg>
+          <svg id="chart" role="img" aria-label="Elevation profile"></svg>
           <div id="nochart">The elevation profile appears here.</div>
         </div>
       </div>
@@ -1977,7 +1974,9 @@ globalThis.MapToGPX = (function () {
     if (!el || map || typeof L === 'undefined') return;
     /* preferCanvas: a several-thousand-point track draws far faster on canvas
        than as an SVG path. */
-    map = L.map(el, { scrollWheelZoom: false, zoomControl: true, preferCanvas: true }).setView([-6.2, 106.83], 10);
+    map = L.map(el, { scrollWheelZoom: false, zoomControl: false, preferCanvas: true }).setView([-6.2, 106.83], 10);
+    /* Bottom right, clear of the Add-a-stop / Fit-route blocks along the top. */
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
     tileLayer = L.tileLayer(TILES, { maxZoom: 19, attribution: TILE_ATTR }).addTo(map);
     renderer = L.canvas({ padding: 0.4 }).addTo(map);
     map.on('click', (e) => {
@@ -2108,12 +2107,20 @@ globalThis.MapToGPX = (function () {
     const svg = $('chart');
     if (!svg) return;
     const r = state.result;
-    const stamp = r ? r.stamp : 'empty';
+    /* Drawn in real pixels rather than in a fixed viewBox stretched to fit.
+       A non-uniform stretch squashes every glyph on both axes horizontally,
+       and no amount of font tuning letters them back out — the coordinate
+       space has to match the box. The cost is redrawing on resize, which the
+       ResizeObserver below handles. */
+    const W = Math.round(svg.clientWidth), H = Math.round(svg.clientHeight);
+    if (W < 80 || H < 60) return;   /* collapsed pane: the observer comes back */
+    const stamp = (r ? r.stamp : 'empty') + '|' + W + 'x' + H;
     if (chartStamp === stamp) return;
     chartStamp = stamp;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     if (!r || !r.hasElevation) { svg.innerHTML = ''; series = null; return; }
 
-    const W = 1000, H = 200, PAD_L = 46, PAD_R = 12, PAD_T = 14, PAD_B = 26;
+    const PAD_L = 36, PAD_R = 12, PAD_T = 14, PAD_B = 22;
     const dists = C.cumulativeDistances(r.points);
     const eles = r.points.map((p) => p.ele);
     const target = 700, step = Math.max(1, Math.floor(r.points.length / target));
@@ -2146,11 +2153,17 @@ globalThis.MapToGPX = (function () {
       p.push(`<line style="${gridS};opacity:.75" x1="${PAD_L}" y1="${y}" x2="${right}" y2="${y}"/>`);
       p.push(`<text style="${axisS}" x="${PAD_L - 7}" y="${y}" dy="3.4" text-anchor="end">${Math.round(t)}</text>`);
     }
-    for (const t of C.axisTicks(0, total / 1000, 8)) {
+    /* Ask for as many distance ticks as the plot has room to letter, not a
+       fixed eight — at a phone width eight of them collide. */
+    const plotW = right - PAD_L;
+    for (const t of C.axisTicks(0, total / 1000, Math.max(3, Math.min(8, Math.round(plotW / 70))))) {
       if (t <= 0 || t * 1000 > total) continue;
-      const x = px(t * 1000).toFixed(1);
+      const xv = px(t * 1000);
+      const x = xv.toFixed(1);
       p.push(`<line style="${gridS};opacity:.5" x1="${x}" y1="${PAD_T}" x2="${x}" y2="${baseY}"/>`);
-      p.push(`<text style="${axisS}" x="${x}" y="${H - 8}" text-anchor="middle">${t}</text>`);
+      /* the KM legend owns the right end of the axis; a label under it reads
+         as one run-together word */
+      if (xv < right - 26) p.push(`<text style="${axisS}" x="${x}" y="${H - 8}" text-anchor="middle">${t}</text>`);
     }
     p.push(`<line style="${gridS}" x1="${PAD_L}" y1="${baseY}" x2="${right}" y2="${baseY}"/>`);
     p.push(`<path fill="${acc}" fill-opacity=".14" d="${area}"/>`);
@@ -2668,6 +2681,20 @@ globalThis.MapToGPX = (function () {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && state.settingsOpen) { state.settingsOpen = false; render(); }
   });
+  /* The chart's coordinate space is its pixel size, so a resize is a redraw.
+     Both signals are wired because neither is universal: ResizeObserver
+     catches the container changing without the window doing so, and the
+     resize event covers engines that decline to observe an <svg> box.
+     drawChart is stamped on that size and returns immediately when nothing
+     has changed, so the duplication costs nothing. */
+  let chartTick = 0;
+  const redrawChart = () => {
+    cancelAnimationFrame(chartTick);
+    chartTick = requestAnimationFrame(() => drawChart());
+  };
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(redrawChart).observe($('chart').parentNode);
+  addEventListener('resize', redrawChart);
+
   $('key').addEventListener('input', (e) => { state.key = e.target.value; render(); });
   $('resolver').addEventListener('input', (e) => { state.resolver = e.target.value; });
 
