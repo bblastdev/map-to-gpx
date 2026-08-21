@@ -33,12 +33,21 @@ test('every icon reference resolves to a sprite symbol', () => {
 
   /* markup: <use href="#id"> */
   const markupRefs = [...html.matchAll(/href="#([a-z0-9-]+)"/g)].map((m) => m[1]);
-  /* script: icon('id', …) and setIcon('elId', 'id') and the ICON lookup table */
-  const iconCalls = [...html.matchAll(/\bicon\('([a-z0-9-]+)'/g)].map((m) => m[1]);
-  const iconTable = [...html.matchAll(/^\s*(?:[a-zA-Z]+: )?'((?:b|f)-[a-z-]+)'/gm)].map((m) => m[1]);
+  /* script: any 'b-…' / 'f-…' literal — icon() calls, setIcon(), and the
+     PROFILES / STEPS / ICON tables alike. Matching the naming convention
+     rather than the call shape is what keeps this from going stale. */
+  const scriptRefs = [...html.matchAll(/'((?:b|f)-[a-z0-9-]+)'/g)].map((m) => m[1]);
 
-  for (const ref of new Set([...markupRefs, ...iconCalls, ...iconTable])) {
+  const referenced = new Set([...markupRefs, ...scriptRefs]);
+  for (const ref of referenced) {
     assert.ok(symbols.has(ref), `icon "#${ref}" is referenced but has no <symbol> in the sprite`);
+  }
+
+  /* And the other direction: the sprite is inlined into every page load, so a
+     glyph a redesign stopped using is dead weight nobody would otherwise
+     notice. */
+  for (const sym of symbols) {
+    assert.ok(referenced.has(sym), `sprite symbol "#${sym}" is not referenced anywhere — drop it`);
   }
 });
 
