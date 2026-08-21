@@ -117,7 +117,15 @@
   .rail { flex: 1 1 311px; min-width: 260px; max-width: 393px; display: flex; flex-direction: column; gap: 2px; }
   .pane { flex: 2 1 311px; min-width: 246px; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
   @media (min-width: 760px) { .rail { max-height: 100%; overflow-y: auto; } }
-  @media (max-width: 759px) { .rail { max-width: none; } .pane { min-height: 377px; } }
+  /* Stacked under the rail, the pane was sized in fixed pixels and the map
+     came out shorter than the chart below it — backwards, since the map is
+     what the pane is for. Size both against the viewport instead, so the map
+     stays the larger of the two on any phone. */
+  @media (max-width: 759px) {
+    .rail { max-width: none; }
+    .pane { min-height: 82vh; }
+    .mapwrap { min-height: 52vh; }
+  }
 
   /* ── panels ─────────────────────────────────────────────────────────── */
   .card { background: var(--surf); padding: 18px; }
@@ -702,6 +710,48 @@ globalThis.MapToGPX = (function () {
     return out;
   }
 
+  /**
+   * Coordinates out of a legacy `geocode=` parameter, one entry per stop in
+   * route order (`saddr` first, then each `daddr` leg).
+   *
+   * The Google Maps mobile app shares the old ?saddr=…&daddr=… form, which
+   * carries no !1d/!2d data blob at all. Without this the parser falls back to
+   * geocoding Google's own address strings, and Nominatim rejects those the
+   * moment one component disagrees with OSM's spelling — "Jalan DI Panjaitan"
+   * against OSM's "Jalan Mayor Jenderal DI. Panjaitan" is enough to return
+   * nothing. The blob holds the position Google itself resolved, so it is both
+   * more accurate and immune to that.
+   *
+   * Each blob is protobuf: field 2 (tag 0x15, fixed32) is latitude and field 3
+   * (tag 0x1d, fixed32) is longitude, each a signed little-endian integer of
+   * degrees scaled by 1e6. Anything not shaped like that yields null rather
+   * than a guess.
+   */
+  function parseGeocodeParam(value) {
+    if (!value) return [];
+    return String(value).split(';').map(decodeGeocodeBlob);
+  }
+
+  function decodeGeocodeBlob(part) {
+    const s = String(part == null ? '' : part).trim();
+    if (!s || typeof atob !== 'function') return null;
+    let bin;
+    try {
+      const b64 = s.replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+      bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+    } catch (_) {
+      return null;   /* not base64 — some other link format */
+    }
+    if (bin.length < 10 || bin.charCodeAt(0) !== 0x15 || bin.charCodeAt(5) !== 0x1d) return null;
+    const int32 = (at) => {
+      let v = 0;
+      for (let i = 3; i >= 0; i--) v = ((v << 8) | (bin.charCodeAt(at + i) & 255)) >>> 0;
+      return v >= 0x80000000 ? v - 0x100000000 : v;
+    };
+    const lat = int32(1) / 1e6, lon = int32(6) / 1e6;
+    return (validLat(lat) && validLon(lon)) ? { lat, lon } : null;
+  }
+
   /** Classify one decoded path/query token into a waypoint stub. */
   function toWaypoint(text) {
     const label = decodeSegment(text);
@@ -802,8 +852,14 @@ globalThis.MapToGPX = (function () {
 
     let waypoints = tokens.map(toWaypoint);
 
-    /* ── merge in data-blob coordinates ── */
-    const blobCoords = parseDataBlobCoords(blob);
+    /* ── merge in the link's own coordinates ── */
+    let blobCoords = parseDataBlobCoords(blob);
+    let coordSource = 'blob';
+    if (!blobCoords.length) {
+      /* Mobile-app shares have no data blob but do carry `geocode=`. */
+      const viaGeocode = parseGeocodeParam(url.searchParams.get('geocode'));
+      if (viaGeocode.some(Boolean)) { blobCoords = viaGeocode; coordSource = 'geocode'; }
+    }
     if (blobCoords.length) {
       const real = waypoints.filter((w) => w.kind !== 'current');
       if (blobCoords.length === waypoints.length) {
@@ -811,9 +867,9 @@ globalThis.MapToGPX = (function () {
       } else if (blobCoords.length === real.length) {
         /* “Your location” legs have no coordinate group of their own */
         real.forEach((w, i) => applyBlobCoords(w, blobCoords[i]));
-      } else if (waypoints.length === 0 && blobCoords.length >= 2) {
-        waypoints = blobCoords.map((c) => ({
-          kind: 'coords', label: `${c.lat}, ${c.lon}`, lat: c.lat, lon: c.lon, source: 'blob'
+      } else if (waypoints.length === 0 && blobCoords.filter(Boolean).length >= 2) {
+        waypoints = blobCoords.filter(Boolean).map((c) => ({
+          kind: 'coords', label: `${c.lat}, ${c.lon}`, lat: c.lat, lon: c.lon, source: coordSource
         }));
       } else {
         notes.push(
@@ -826,7 +882,7 @@ globalThis.MapToGPX = (function () {
     function applyBlobCoords(w, c) {
       if (!c) return;
       if (isNum(w.lat) && isNum(w.lon)) return;   // explicit URL coordinates win
-      w.lat = c.lat; w.lon = c.lon; w.source = 'blob';
+      w.lat = c.lat; w.lon = c.lon; w.source = coordSource;
       if (w.kind === 'name' || w.kind === 'place_id') w.kind = 'resolved';
     }
 
@@ -1221,7 +1277,7 @@ globalThis.MapToGPX = (function () {
   return {
     ParseError, ShortLinkError,
     GPX_NS, MAX_WAYPOINTS_PER_REQUEST, PROFILE_SUFFIX,
-    isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseLatLng, decodeSegment,
+    isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseGeocodeParam, parseLatLng, decodeSegment,
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint,
     niceStep, axisTicks, gradeStats,

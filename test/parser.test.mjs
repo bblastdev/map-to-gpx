@@ -274,6 +274,49 @@ test('parses the api=1 query form including pipe-separated waypoints', () => {
   assert.equal(r.travelMode, 'bicycling');
 });
 
+/* The Google Maps mobile app shares a different URL shape from the web: no
+   /maps/dir/ path and no !1d/!2d blob, but a `geocode=` parameter carrying one
+   encoded position per stop. Both of the URLs below are the same real route in
+   Purwokerto, shared from each surface. */
+const MOBILE_SHARE =
+  'https://maps.google.com/?geocode=FfiLjv8dwwGDBinR5GgXnV5lLjEM-hgIwWmSlQ%3D%3D;' +
+  'FYi2jv8dUriCBikl1XqEY15lLjHsfk9qF6CUEA%3D%3D' +
+  '&daddr=Alun+Alun+Kota+Purwokerto,+Jalan+Kabupaten,+Purwokerto,+Sokanegara,+Banyumas+Regency,+Central+Java' +
+  '&saddr=SMK+Telkom+Purwokerto,+Jalan+DI+Panjaitan,+Karangreja,+Purwokerto+Kidul,+Banyumas+Regency,+Central+Java' +
+  '&dirflg=d';
+
+test('reads coordinates out of a mobile share\'s geocode= parameter', () => {
+  const r = C.parseGoogleMapsUrl(MOBILE_SHARE);
+  assert.equal(r.waypoints.length, 2);
+
+  /* Google's own resolved positions, to within a metre of what the web link's
+     data blob gives for the identical route. */
+  assert.ok(Math.abs(r.waypoints[0].lat - -7.435272) < 1e-6, `start lat ${r.waypoints[0].lat}`);
+  assert.ok(Math.abs(r.waypoints[0].lon - 109.248963) < 1e-6, `start lon ${r.waypoints[0].lon}`);
+  assert.ok(Math.abs(r.waypoints[1].lat - -7.424376) < 1e-6, `end lat ${r.waypoints[1].lat}`);
+  assert.ok(Math.abs(r.waypoints[1].lon - 109.230162) < 1e-6, `end lon ${r.waypoints[1].lon}`);
+
+  /* and nothing is left needing a Nominatim lookup, which is the whole point:
+     Nominatim returns nothing for these over-specified Google address strings */
+  for (const w of r.waypoints) {
+    assert.equal(w.source, 'geocode');
+    assert.notEqual(w.kind, 'name');
+  }
+});
+
+test('geocode= blobs that are not lat/lon protobufs are skipped, not guessed', () => {
+  assert.deepEqual(C.parseGeocodeParam(''), []);
+  assert.deepEqual(C.parseGeocodeParam('not-base64!!'), [null]);
+  /* right encoding, wrong shape: leading tag is 0x0a, not 0x15 */
+  assert.deepEqual(C.parseGeocodeParam('CgEB'), [null]);
+  /* one good, one unusable — position in the list is preserved so the
+     remaining stop still lines up with its name */
+  const mixed = C.parseGeocodeParam('FfiLjv8dwwGDBinR5GgXnV5lLjEM-hgIwWmSlQ==;zzzz');
+  assert.equal(mixed.length, 2);
+  assert.ok(mixed[0] && Math.abs(mixed[0].lat - -7.435272) < 1e-6);
+  assert.equal(mixed[1], null);
+});
+
 test('parses the legacy saddr/daddr form with to: separators', () => {
   const r = C.parseGoogleMapsUrl(URLS.legacy);
   assert.deepEqual(r.waypoints.map((w) => w.label),

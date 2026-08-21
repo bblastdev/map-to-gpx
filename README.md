@@ -99,7 +99,8 @@ npm test
 The tests extract the `<script id="mtg-core">` block out of `index.html` and run it in Node's
 `vm`, so they exercise the code that actually ships rather than a copy that can drift. They
 cover URL parsing (real captured Google Maps URLs, the `api=1` query form, the legacy
-`saddr`/`daddr` form, non-ASCII names, short links, "Your location", malformed input), GPX
+`saddr`/`daddr` form, mobile-share `geocode=` blobs, non-ASCII names, short links, "Your
+location", malformed input), GPX
 generation and XML well-formedness, filename slugs, distance/elevation maths, and the waypoint
 chunking used for long routes.
 
@@ -325,7 +326,8 @@ so it cannot be turned into an open proxy for fetching arbitrary URLs.
 | Raw `lat,lng` path segments | Used as-is, no geocoding |
 | `maps.app.goo.gl` / `goo.gl` short links | Expanded via the resolver |
 | `/maps/dir/?api=1&origin=…&destination=…&waypoints=A\|B` | The documented Maps URLs API |
-| `?saddr=A&daddr=B+to:C` | The pre-2013 form still found in old emails |
+| `?saddr=A&daddr=B+to:C` | The pre-2013 form — and, importantly, what the **Google Maps mobile app** still shares today |
+| `geocode=` blobs on that form | The mobile share carries no `data=` blob, so this is where its coordinates live: one base64url protobuf per stop in route order, field 2 (`0x15`) latitude and field 3 (`0x1d`) longitude, signed little-endian integers of degrees × 1e6. Decoded in preference to the place names, for the same reason the `!1d`/`!2d` pairs are. |
 | `%C3%A9`, `+`, `%2F`, `%2B` | Decoded in the right order, so `Café`, `RT.5/RW.2` and plus codes like `RR4F+264` survive |
 | `!3e0/1/2/3` travel mode | Used to preselect a cycling or walking profile |
 | Duplicate consecutive stops | Dropped |
