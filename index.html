@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Map to GPX — Google Maps directions → GPX for your watch</title>
 <meta name="description" content="Paste a Google Maps directions link, get a GPX file for your running watch, bike computer, Strava or Komoot.">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230b0b0b'/%3E%3Crect x='14' y='14' width='72' height='72' fill='%23fc4c02'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,9 +16,9 @@
       crossorigin="">
 <style>
   /* ── design tokens ───────────────────────────────────────────────────
-     Both palettes are declared in the script and written onto :root at
-     runtime so Leaflet's own chrome picks them up too. The values here are
-     the dark set, so the first paint is right before the script runs. */
+     The one palette, declared here and nowhere else. Leaflet's own chrome
+     reads it too, and the chart picks values out with getComputedStyle, so
+     nothing has to be mirrored in the script. */
   :root {
     --bg:#0b0b0b; --surf:#141414; --surf2:#1e1e1a; --surf3:#2a2a26;
     --line:#2a2a26; --line2:rgba(242,241,234,.22); --ink:#f2f1ea; --ink2:#a9a9a0;
@@ -27,14 +27,14 @@
     --err:#fc4c02; --errsoft:rgba(252,76,2,.14); --shadow:none;
     /* Three surfaces that are not simply "the page". --bar is the masthead,
        --panel the inverted blocks (errors, the map overlays, the drawer), and
-       --fill the offcut below the rail. Each carries its own ink so the pair
-       can invert together when the theme flips. */
+       --fill the offcut below the rail. Each keeps its own ink so the pairing
+       stays explicit at the point of use. */
     --fill:#0b0b0b;
     --bar:#0b0b0b; --barink:#f2f1ea; --barink2:#77776e;
     --panel:#0b0b0b; --panelink:#f2f1ea; --panelink2:#77776e;
     --panel2:#141414; --panelline:#2a2a26;
-    /* Colour-blocked accents read identically in either theme, so these are
-       literals rather than tokens that flip with it. */
+    /* The colour-blocked accents, named so the blocks that use them read as
+       intent rather than as hex. */
     --acid:#e9f53b; --navy:#0e2a47; --olive:#4a5320; --paper:#f2f1ea; --black:#0b0b0b;
     --font:Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
@@ -113,11 +113,6 @@
   }
   @media (max-width: 720px) { .brand .tag { display: none; } }
   @media (max-width: 400px) { .brand { padding: 0 11.5px; gap: 8.2px; } .brand .name { font-size: 13.9px; } }
-  .seg { flex: none; display: flex; gap: 2px; }
-  .seg button { width: 45px; display: flex; align-items: center; justify-content: center; border: 0; background: var(--surf3); color: var(--ink2); cursor: pointer; }
-  #btn-dark[aria-pressed="true"] { background: var(--black); color: var(--paper); }
-  #btn-light[aria-pressed="true"] { background: var(--acid); color: var(--black); }
-  @media (max-width: 400px) { .seg button { width: 37px; } }
 
   /* ── layout ─────────────────────────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-wrap: wrap; align-items: stretch; gap: 2px; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
@@ -352,7 +347,8 @@
 <!--
   Phosphor icons (MIT, phosphoricons.com) in bold and fill weights, inlined as
   a sprite so the page stays self-contained: no icon font, no extra request,
-  and each glyph inherits currentColor so it themes with everything else.
+  and each glyph inherits currentColor, so it takes the ink of whatever block
+  it sits in.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
   <symbol id="b-path" viewBox="0 0 256 256"><path d="M200,164a36.07,36.07,0,0,0-33.94,24H72a28,28,0,0,1,0-56h96a44,44,0,0,0,0-88H72a12,12,0,0,0,0,24h96a20,20,0,0,1,0,40H72a52,52,0,0,0,0,104h94.06A36,36,0,1,0,200,164Zm0,48a12,12,0,1,1,12-12A12,12,0,0,1,200,212Z"/></symbol>
@@ -387,8 +383,6 @@
   <symbol id="b-arrow-counter-clockwise" viewBox="0 0 256 256"><path d="M228,128a100,100,0,0,1-98.66,100H128a99.39,99.39,0,0,1-68.62-27.29,12,12,0,0,1,16.48-17.45,76,76,0,1,0-1.57-109c-.13.13-.25.25-.39.37L54.89,92H72a12,12,0,0,1,0,24H24a12,12,0,0,1-12-12V56a12,12,0,0,1,24,0V76.72L57.48,57.06A100,100,0,0,1,228,128Z"/></symbol>
   <symbol id="b-arrow-right" viewBox="0 0 256 256"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></symbol>
   <symbol id="f-path" viewBox="0 0 256 256"><path d="M228,200a28,28,0,0,1-54.83,8H72a48,48,0,0,1,0-96h96a24,24,0,0,0,0-48H72a8,8,0,0,1,0-16h96a40,40,0,0,1,0,80H72a32,32,0,0,0,0,64H173.17A28,28,0,0,1,228,200Z"/></symbol>
-  <symbol id="f-moon-stars" viewBox="0 0 256 256"><path d="M240,96a8,8,0,0,1-8,8H216v16a8,8,0,0,1-16,0V104H184a8,8,0,0,1,0-16h16V72a8,8,0,0,1,16,0V88h16A8,8,0,0,1,240,96ZM144,56h8v8a8,8,0,0,0,16,0V56h8a8,8,0,0,0,0-16h-8V32a8,8,0,0,0-16,0v8h-8a8,8,0,0,0,0,16Zm65.14,94.33A88.07,88.07,0,0,1,105.67,46.86a8,8,0,0,0-10.6-9.06A96,96,0,1,0,218.2,160.93a8,8,0,0,0-9.06-10.6Z"/></symbol>
-  <symbol id="f-sun" viewBox="0 0 256 256"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm8,24a64,64,0,1,0,64,64A64.07,64.07,0,0,0,128,64ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></symbol>
   <symbol id="f-warning-circle" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z"/></symbol>
   <symbol id="f-info" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-4,48a12,12,0,1,1-12,12A12,12,0,0,1,124,72Zm12,112a16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40a8,8,0,0,1,0,16Z"/></symbol>
   <symbol id="f-radio-button" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm56-88a56,56,0,1,1-56-56A56.06,56.06,0,0,1,184,128Z"/></symbol>
@@ -407,10 +401,6 @@
       <svg class="ic ic-j mark" aria-hidden="true"><use href="#f-path"/></svg>
       <div class="name">Map to GPX</div>
       <div class="tag">Google Maps stops · routed on OpenStreetMap</div>
-    </div>
-    <div class="seg" role="group" aria-label="Colour theme">
-      <button id="btn-dark" aria-pressed="true" title="Dark theme" aria-label="Dark theme"><svg class="ic ic-g" aria-hidden="true"><use href="#f-moon-stars"/></svg></button>
-      <button id="btn-light" aria-pressed="false" title="Light theme" aria-label="Light theme"><svg class="ic ic-g" aria-hidden="true"><use href="#f-sun"/></svg></button>
     </div>
   </header>
 
@@ -535,8 +525,7 @@
       </div>
 
       <footer class="foot">
-        <!-- The only way into Settings: the header carries the theme switch
-             and nothing else, by request. -->
+        <!-- The only way into Settings: the masthead is the wordmark alone. -->
         <button class="footlink" id="btn-settings">
           <svg class="ic ic-b" aria-hidden="true"><use href="#b-sliders-horizontal"/></svg>Settings
         </button>
@@ -1929,39 +1918,15 @@ globalThis.MapToGPX = (function () {
   ];
   const EXAMPLE = 'https://www.google.com/maps/dir/Monas,+Jakarta/Gelora+Bung+Karno/Ancol+Beach/';
 
-  /* Two palettes over one black ground. --bg and --line are the same colour
-     in both: the 2px gaps between panels are the page's only rules, and they
-     stay black whichever way the theme goes. */
-  const DARK = {
-    '--bg': '#0b0b0b', '--surf': '#141414', '--surf2': '#1e1e1a', '--surf3': '#2a2a26',
-    '--line': '#2a2a26', '--line2': 'rgba(242,241,234,.22)', '--ink': '#f2f1ea', '--ink2': '#a9a9a0',
-    '--ink3': '#77776e', '--acc': '#fc4c02', '--accink': '#0b0b0b', '--accsoft': 'rgba(252,76,2,.16)',
-    '--cool': '#7fa8d9', '--coolsoft': 'rgba(127,168,217,.14)', '--ok': '#a9c24a', '--err': '#fc4c02',
-    '--errsoft': 'rgba(252,76,2,.14)', '--fill': '#0b0b0b',
-    '--bar': '#0b0b0b', '--barink': '#f2f1ea', '--barink2': '#77776e',
-    '--panel': '#0b0b0b', '--panelink': '#f2f1ea', '--panelink2': '#77776e',
-    '--panel2': '#141414', '--panelline': '#2a2a26', '--shadow': 'none'
-  };
-  const LIGHT = {
-    '--bg': '#e4e3d9', '--surf': '#ffffff', '--surf2': '#f4f3ee', '--surf3': '#e4e3d9',
-    '--line': '#e4e3d9', '--line2': 'rgba(11,11,11,.28)', '--ink': '#0b0b0b', '--ink2': '#3a3a34',
-    '--ink3': '#6e6e64', '--acc': '#fc4c02', '--accink': '#f2f1ea', '--accsoft': 'rgba(252,76,2,.12)',
-    '--cool': '#0e2a47', '--coolsoft': 'rgba(14,42,71,.1)', '--ok': '#4a5320', '--err': '#fc4c02',
-    '--errsoft': 'rgba(252,76,2,.1)', '--fill': '#ffffff',
-    '--bar': '#ffffff', '--barink': '#0b0b0b', '--barink2': '#6e6e64',
-    '--panel': '#ffffff', '--panelink': '#0b0b0b', '--panelink2': '#6e6e64',
-    '--panel2': '#f4f3ee', '--panelline': '#e4e3d9', '--shadow': 'none'
-  };
-  const TILES = {
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-  };
+  /* The palette lives in the stylesheet, not here — token() reads it back out
+     of the computed style, so there is nothing to mirror. */
+  const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
 
   /* ── state ──────────────────────────────────────────────────────────── */
 
   const state = {
-    theme: 'dark', link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
+    link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
     copyLabel: 'Copy GPX', shareLabel: 'Share link'
@@ -1971,14 +1936,7 @@ globalThis.MapToGPX = (function () {
   let bounds = null, needsFit = false, fitKey = null, mapStamp = null, chartStamp = null;
   let series = null, clock = null, chartWired = false;
 
-  /* ── theme ──────────────────────────────────────────────────────────── */
-
-  function applyTheme(theme) {
-    const set = theme === 'light' ? LIGHT : DARK;
-    for (const k in set) document.documentElement.style.setProperty(k, set[k]);
-    try { localStorage.setItem('mtg-theme', theme); } catch (_) { /* private mode */ }
-    if (tileLayer) tileLayer.setUrl(TILES[theme === 'light' ? 'light' : 'dark']);
-  }
+  /** Read a design token so canvas- and SVG-drawn things match the CSS. */
   const token = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#fc4c02';
 
   /* ── share links ────────────────────────────────────────────────────── */
@@ -2019,7 +1977,7 @@ globalThis.MapToGPX = (function () {
     /* preferCanvas: a several-thousand-point track draws far faster on canvas
        than as an SVG path. */
     map = L.map(el, { scrollWheelZoom: false, zoomControl: true, preferCanvas: true }).setView([-6.2, 106.83], 10);
-    tileLayer = L.tileLayer(TILES[state.theme === 'light' ? 'light' : 'dark'], { maxZoom: 19, attribution: TILE_ATTR }).addTo(map);
+    tileLayer = L.tileLayer(TILES, { maxZoom: 19, attribution: TILE_ATTR }).addTo(map);
     renderer = L.canvas({ padding: 0.4 }).addTo(map);
     map.on('click', (e) => {
       if (state.addMode) return insertStopAt(e.latlng);
@@ -2046,7 +2004,7 @@ globalThis.MapToGPX = (function () {
     const r = state.result;
     /* Rebuilding thousands of polyline points on every render (the busy clock
        ticks once a second) is pure waste — only redraw on real change. */
-    const stamp = (r ? r.stamp : 'none') + '|' + state.selected + '|' + state.theme + '|' + waypoints.length;
+    const stamp = (r ? r.stamp : 'none') + '|' + state.selected + '|' + waypoints.length;
     if (mapStamp === stamp) return;
     mapStamp = stamp;
     if (layer) { layer.remove(); layer = null; }
@@ -2149,7 +2107,7 @@ globalThis.MapToGPX = (function () {
     const svg = $('chart');
     if (!svg) return;
     const r = state.result;
-    const stamp = (r ? r.stamp : 'empty') + '|' + state.theme;
+    const stamp = r ? r.stamp : 'empty';
     if (chartStamp === stamp) return;
     chartStamp = stamp;
     if (!r || !r.hasElevation) { svg.innerHTML = ''; series = null; return; }
@@ -2510,10 +2468,6 @@ globalThis.MapToGPX = (function () {
   function render() {
     const s = state, r = s.result;
 
-    /* header */
-    $('btn-dark').setAttribute('aria-pressed', String(s.theme !== 'light'));
-    $('btn-light').setAttribute('aria-pressed', String(s.theme === 'light'));
-
     /* input card */
     for (const b of $('profiles').children) b.setAttribute('aria-pressed', String(b.dataset.id === s.profile));
     const cta = $('btn-convert');
@@ -2711,15 +2665,7 @@ globalThis.MapToGPX = (function () {
   $('key').addEventListener('input', (e) => { state.key = e.target.value; render(); });
   $('resolver').addEventListener('input', (e) => { state.resolver = e.target.value; });
 
-  $('btn-dark').addEventListener('click', () => { state.theme = 'dark'; applyTheme('dark'); mapStamp = null; chartStamp = null; render(); });
-  $('btn-light').addEventListener('click', () => { state.theme = 'light'; applyTheme('light'); mapStamp = null; chartStamp = null; render(); });
-
   /* ── boot ───────────────────────────────────────────────────────────── */
-
-  const storedTheme = (() => { try { return localStorage.getItem('mtg-theme'); } catch (_) { return null; } })();
-  const prefersLight = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches;
-  state.theme = storedTheme || (prefersLight ? 'light' : 'dark');
-  applyTheme(state.theme);
 
   /* A key from config.local.js means nothing to ask for — the field stays in
      Settings for overriding, but the interface never shows the credential. */

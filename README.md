@@ -112,21 +112,22 @@ let malformed GPX pass.
 ## The interface
 
 A two-pane workspace: controls and results on the left, map and elevation profile on the right,
-stacking to a single column on a phone. Dark by default, light on request — the choice is
-remembered, and the map tiles follow it.
+stacking to a single column on a phone. Dark only — there is no light theme and no switch.
 
 The look is editorial rather than app-like: flat colour blocks with no borders, no corner radii
-and no shadows, separated by 2px gaps. Those gaps show `--bg` and are the only rules on the page —
-`#0b0b0b` under the dark theme, warm grey `#e4e3d9` under the light one. Panels are `#141414` or
-white, and the accent throughout is Strava-orange `#fc4c02`.
+and no shadows, separated by 2px gaps. Those gaps show `--bg` (`#0b0b0b`) and are the only rules
+on the page. Panels are `#141414`, and the accent throughout is Strava-orange `#fc4c02`.
 
-Three surfaces are not simply "the page", and each carries its own ink so the pair inverts
-together: `--bar` is the masthead, `--panel` the inverted blocks (the error card, the map
+Three surfaces are not simply "the page", each with its own ink so the pairing stays explicit at
+the point of use: `--bar` is the masthead, `--panel` the inverted blocks (the error card, the map
 overlays, the settings drawer), and `--fill` the offcut that carries panel colour to the bottom
-of a short rail. Four accents stay put in both themes: acid `#e9f53b` for the distance headline
-and the primary call to action, navy `#0e2a47` for ascent and descent, olive `#4a5320` for the
-notes, and orange for everything selected. The distance itself is set in weight-300 Inter at
+of a short rail. Four accents carry meaning: acid `#e9f53b` for the distance headline and the
+primary call to action, navy `#0e2a47` for ascent and descent, olive `#4a5320` for the notes, and
+orange for everything selected. The distance itself is set in weight-300 Inter at
 `clamp(62px, 17vw, 108px)` — it is the one figure most people came for.
+
+The palette lives in the stylesheet and nowhere else. The chart and the map markers pick values
+out of it with `getComputedStyle`, so there is no second copy in the script to drift.
 
 The whole sheet is drawn at 82% of the design canvas's nominal sizes, which is what makes the
 rail sit at ~27% of a 1440px window rather than a third of it. Type has a 9px floor the geometry
@@ -385,7 +386,7 @@ is lost. Inter is pulled from Google Fonts and falls back to the system UI font.
 [Phosphor](https://phosphoricons.com/) supplies the icons (MIT), in **bold** and **fill**
 weights. They are inlined as a 43-symbol SVG sprite rather than pulled from the icon-font CDN the
 design referenced: no extra requests, nothing to fail at load, no flash of unstyled glyphs, and
-each icon inherits `currentColor` so it themes along with everything else. A test asserts the
+each icon inherits `currentColor` so it takes the ink of its block. A test asserts the
 sprite and the references match in *both* directions, so neither a dangling `#id` nor a glyph a
 redesign stopped using can survive unnoticed.
 
