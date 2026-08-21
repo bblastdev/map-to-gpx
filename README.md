@@ -233,9 +233,18 @@ it cannot vouch for:
   (`RATE_PER_DAY`, default 1200, under ORS's 2 000 so your own use still fits).
 
 Counters live in Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set — run
-`supabase/schema.sql` once to create the table and its atomic `bump_counter` function. Without
+`supabase/schema.sql` once to create the tables and the atomic `bump_counter` function. Without
 Supabase the limiter falls back to per-instance memory, which leaks across serverless instances;
 the `X-RateLimit-Backend` response header tells you which is in play.
+
+The counters are short-lived by design — a day bucket expires 24 hours after its first request —
+so `bump_counter` copies each daily total into `usage_history` on its way out, and the
+`usage_daily` view unions that with today's live figure. This exists for one reason: HeiGIT grant
+higher quotas on evidence of need, and without a record there is nothing to show them. Query it
+with the snippets at the foot of `schema.sql`. Only `day:` buckets are archived; `ip:` buckets
+are deleted unrecorded, because a request count tied to an IP address is personal data. Note the
+counter is bumped *before* the limit is tested, so a capped day records demand rather than what
+was served — which is the number worth quoting.
 
 > ⚠ **Never deploy `config.local.js`.** It holds your key in plain text, `netlify.toml`
 > publishes the whole directory, and the Netlify CLI does *not* consult `.gitignore` for it.
@@ -409,6 +418,18 @@ redesign stopped using can survive unnoticed.
   elevation model sampled along the route; expect it to differ from what your watch records.
   When ORS does not return totals the app computes them from the track with a 2 m hysteresis
   threshold, which avoids the wild over-counting a naive sum of differences produces.
+- **The time is a model, not a promise.** ORS returns its own duration, but elevation-aware
+  timing is disabled on its public servers — *"it can lead to undesirable routes"* — so a route
+  with 300 m of climbing comes back timed as though it were flat, and `foot-*` profiles come back
+  at a flat 5 km/h whatever the terrain. The app therefore computes its own, integrating over the
+  track in 80 m bins so every slope is paid for: **Tobler's hiking function** for the foot
+  profiles, and a **power balance** (rolling resistance + aerodynamic drag + gravity, solved for
+  speed by bisection) for the bike ones. The parameters describe an unhurried average person —
+  95 W, 85 kg, CdA 0.50 for a road bike — and the result is *moving* time, with no stops.
+  Hover the figure to see the assumptions and what ORS said. It will not match your legs; it is a
+  planning number that at least knows the hills are there. `estimateDuration` and `PACE_MODELS`
+  in the core are the whole of it, and the bin width is the guard that stops a metre of DEM
+  noise every 10 m reading as a 30% wall.
 - **A geocoded place name is a guess.** When a link carries only names, the app says so under
   the summary and asks you to check the pins before riding. Links with a `data=` blob skip
   geocoding entirely and are exact.

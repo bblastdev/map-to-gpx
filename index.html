@@ -289,13 +289,31 @@
   .stops { display: flex; flex-direction: column; }
   .stop { display: flex; align-items: center; gap: 10.7px; padding: 9.8px 0; border-top: 1px solid var(--line); }
   .stop:first-child { border-top-color: transparent; }
-  .stop .ic { color: var(--cool); }
-  .stop.start .ic { color: var(--ok); }
-  .stop.end .ic { color: var(--acc); }
+  /* The leading glyph only. A descendant selector here also caught the grip
+     and the remove button, painting them the row's status colour. */
+  .stop > .ic { color: var(--cool); }
+  .stop.start > .ic { color: var(--ok); }
+  .stop.end > .ic { color: var(--acc); }
   .stop .mid { flex: 1; min-width: 0; }
   .stop .lab { display: block; font: 600 12.3px/1.3 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stop .sub { display: block; font: 500 9px/1.3 var(--font); letter-spacing: .09em; text-transform: uppercase; color: var(--ink3); margin-top: 4px; }
   .stop .x { display: flex; align-items: center; justify-content: center; width: 29px; height: 29px; flex: none; border: 0; background: var(--surf3); color: var(--ink); cursor: pointer; }
+  /* Only the grip claims the pointer, so a drag anywhere else on the row still
+     scrolls the rail — the difference between a list you can reorder and a
+     list you cannot scroll past. */
+  .stop .grip {
+    display: flex; align-items: center; justify-content: center;
+    width: 29px; align-self: stretch; flex: none; border: 0; padding: 0;
+    background: none; color: var(--ink3); cursor: grab; touch-action: none;
+  }
+  .stop .grip:active { cursor: grabbing; }
+  .stop .grip:hover { color: var(--ink); }
+  /* Same reasoning as the field's clear control: a thumb needs more than a
+     cursor does, and this one has to be grabbed precisely enough to drag. */
+  @media (pointer: coarse) { .stop .grip { width: 44px; } }
+  .stops.reordering .stop { transition: transform .16s ease; }
+  .stop.lifted { position: relative; z-index: 2; background: var(--surf2); transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { .stops.reordering .stop { transition: none; } }
 
   .notes { background: var(--olive); color: var(--paper); padding: 13.1px 18px; }
   .notes summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8.2px; font: 600 9px/1 var(--font); letter-spacing: .15em; text-transform: uppercase; }
@@ -392,6 +410,7 @@
   <symbol id="b-trend-down" viewBox="0 0 256 256"><path d="M244,128v64a12,12,0,0,1-12,12H168a12,12,0,0,1,0-24h35l-67-67-31.51,31.52a12,12,0,0,1-17,0l-72-72a12,12,0,0,1,17-17L96,119l31.51-31.52a12,12,0,0,1,17,0L220,163V128a12,12,0,0,1,24,0Z"/></symbol>
   <symbol id="b-shuffle" viewBox="0 0 256 256"><path d="M240.49,175.51a12,12,0,0,1,0,17l-24,24a12,12,0,0,1-17-17L203,196h-2.09a76.17,76.17,0,0,1-61.85-31.83L97.38,105.78A52.1,52.1,0,0,0,55.06,84H32a12,12,0,0,1,0-24H55.06a76.17,76.17,0,0,1,61.85,31.83l41.71,58.39A52.1,52.1,0,0,0,200.94,172H203l-3.52-3.51a12,12,0,0,1,17-17Zm-95.62-72.62a12,12,0,0,0,16.93-1.13A52,52,0,0,1,200.94,84H203l-3.52,3.51a12,12,0,0,0,17,17l24-24a12,12,0,0,0,0-17l-24-24a12,12,0,0,0-17,17L203,60h-2.09a76,76,0,0,0-57.2,26A12,12,0,0,0,144.87,102.89Zm-33.74,50.22a12,12,0,0,0-16.93,1.13A52,52,0,0,1,55.06,172H32a12,12,0,0,0,0,24H55.06a76,76,0,0,0,57.2-26A12,12,0,0,0,111.13,153.11Z"/></symbol>
   <symbol id="b-map-pin-area" viewBox="0 0 256 256"><path d="M108,80a20,20,0,1,1,20,20A20,20,0,0,1,108,80ZM60,80a68,68,0,0,1,136,0c0,62.25-59.51,97-62.05,98.42a12,12,0,0,1-11.9,0C119.51,177,60,142.25,60,80Zm24,0c0,38.2,30.71,64.2,44,73.64C141.21,144.15,172,118,172,80a44,44,0,0,0-88,0Zm124.57,65.6a12,12,0,1,0-9.14,22.19C213.56,173.61,220,180.27,220,184c0,4-7.13,11.07-22.77,17.08-18.3,7-42.89,10.92-69.23,10.92s-50.93-3.88-69.23-10.92C43.12,195.07,36,188,36,184c0-3.73,6.44-10.39,20.57-16.21a12,12,0,1,0-9.14-22.19C31.27,152.25,12,164.31,12,184c0,34.14,58.36,52,116,52,29.22,0,56.86-4.44,77.85-12.52C220.1,218,244,205.59,244,184,244,164.31,224.73,152.25,208.57,145.6Z"/></symbol>
+  <symbol id="b-dots-six-vertical" viewBox="0 0 256 256"><path d="M108,60A16,16,0,1,1,92,44,16,16,0,0,1,108,60Zm56,16a16,16,0,1,0-16-16A16,16,0,0,0,164,76ZM92,112a16,16,0,1,0,16,16A16,16,0,0,0,92,112Zm72,0a16,16,0,1,0,16,16A16,16,0,0,0,164,112ZM92,180a16,16,0,1,0,16,16A16,16,0,0,0,92,180Zm72,0a16,16,0,1,0,16,16A16,16,0,0,0,164,180Z"/></symbol>
   <symbol id="b-hand-grabbing" viewBox="0 0 256 256"><path d="M188,76a31.85,31.85,0,0,0-11.21,2,32,32,0,0,0-48.79-11A32,32,0,0,0,76,92v16H68a32,32,0,0,0-32,32v12a92,92,0,0,0,184,0V108A32,32,0,0,0,188,76Zm8,76a68,68,0,0,1-136,0V140a8,8,0,0,1,8-8h8v20a12,12,0,0,0,24,0V92a8,8,0,0,1,16,0v28a12,12,0,0,0,24,0V92a8,8,0,0,1,16,0v28a12,12,0,0,0,24,0V108a8,8,0,0,1,16,0Z"/></symbol>
   <symbol id="b-x" viewBox="0 0 256 256"><path d="M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z"/></symbol>
   <symbol id="b-file-code" viewBox="0 0 256 256"><path d="M180.49,143.51a12,12,0,0,1,0,17l-24,24a12,12,0,0,1-17-17L155,152l-15.52-15.51a12,12,0,1,1,17-17Zm-64-24a12,12,0,0,0-17,0l-24,24a12,12,0,0,0,0,17l24,24a12,12,0,0,0,17-17L101,152l15.52-15.51A12,12,0,0,0,116.49,119.51ZM220,88V216a20,20,0,0,1-20,20H56a20,20,0,0,1-20-20V40A20,20,0,0,1,56,20h96a12,12,0,0,1,8.49,3.52l56,56A12,12,0,0,1,220,88ZM160,57V80h23Zm36,155V104H148a12,12,0,0,1-12-12V44H60V212Z"/></symbol>
@@ -535,7 +554,7 @@
         <div class="card">
           <div class="row-between" style="margin-bottom:11.5px">
             <div class="eyebrow"><svg class="ic ic-a" aria-hidden="true"><use href="#b-map-pin-area"/></svg>Stops</div>
-            <div class="eyebrow"><svg class="ic ic-b" aria-hidden="true"><use href="#b-hand-grabbing"/></svg>Drag to reshape</div>
+            <div class="eyebrow"><svg class="ic ic-b" aria-hidden="true"><use href="#b-hand-grabbing"/></svg>Drag pin or row</div>
           </div>
           <div class="stops" id="stops"></div>
         </div>
@@ -1109,6 +1128,125 @@ globalThis.MapToGPX = (function () {
    * between adjacent points — consecutive DEM samples a few metres apart
    * produce absurd percentages that mean nothing on the ground.
    */
+  /* ── how long it will actually take ──────────────────────────────────
+     OpenRouteService returns a duration, but elevation-aware timing is
+     switched off on its public servers ("it can lead to undesirable routes"),
+     so a route with 300 m of climbing is timed as though it were flat. These
+     models put the hills back in.
+
+     They describe an unhurried average person on a normal day, not an
+     athlete, and they measure moving time — no cafe stops, no traffic lights.
+     Everything is SI: metres, seconds, watts, kilograms. */
+
+  const GRAVITY = 9.80665;      // m/s²
+  const AIR_DENSITY = 1.225;    // kg/m³ at sea level, 15 °C
+  const MAX_GRADE = 0.30;       // beyond ±30% the DEM is usually lying
+
+  /**
+   * Cycling speed from a power balance: the rider's watts are spent on rolling
+   * resistance, pushing air, and lifting mass against gravity.
+   *
+   *   P = Crr·m·g·v  +  ½·ρ·CdA·v³  +  m·g·sin(θ)·v
+   *
+   * There is no closed form worth writing for v, so this bisects — it is a
+   * monotonic function of v over the range that matters, and 40 halvings put
+   * it well inside a rounding error.
+   */
+  function cyclingSpeed(grade, bike) {
+    const linear = bike.crr * bike.mass * GRAVITY + bike.mass * GRAVITY * grade;
+    const cubic = 0.5 * AIR_DENSITY * bike.cda;
+    let lo = 0, hi = 30;
+    for (let i = 0; i < 40; i++) {
+      const v = (lo + hi) / 2;
+      if (linear * v + cubic * v * v * v > bike.power) hi = v; else lo = v;
+    }
+    const v = (lo + hi) / 2;
+    /* Downhill the balance would have you pedalling into a speed nobody holds
+       on a public road, and uphill it tends to zero long before a person gives
+       up and walks. */
+    return Math.min(bike.vmax, Math.max(bike.vmin, v));
+  }
+
+  /**
+   * Walking speed from Tobler's hiking function, the standard slope-to-pace
+   * curve in GIS work:
+   *
+   *   v = 6·exp(−3.5·|grade + 0.05|) km/h
+   *
+   * The 0.05 offset is why a gentle descent is quicker than the flat, which
+   * matches how walking actually feels. `ease` scales the whole curve down for
+   * rougher going.
+   */
+  function walkingSpeed(grade, ease) {
+    return ease * 6 * Math.exp(-3.5 * Math.abs(grade + 0.05)) / 3.6;
+  }
+
+  /**
+   * Running speed from Minetti's measured cost of transport — the metabolic
+   * price in J/kg/m of covering ground at a given gradient:
+   *
+   *   Cr(i) = 155.4i⁵ − 30.4i⁴ − 43.3i³ + 46.3i² + 19.5i + 3.6
+   *
+   * At the flat that is the familiar 3.6 J/kg/m. Hold the effort constant and
+   * speed falls as the cost rises, so v(i) = v_flat · 3.6/Cr(i). This is the
+   * curve behind every "grade adjusted pace" figure you have seen.
+   *
+   * The curve bottoms out near −20% and turns back up, because very steep
+   * descents cost more again — but it still says you would be flying, so the
+   * caps do the last bit of work that physiology does not.
+   */
+  function runningSpeed(grade, runner) {
+    const i = grade;
+    const cost = 3.6 + i * (19.5 + i * (46.3 + i * (-43.3 + i * (-30.4 + i * 155.4))));
+    const v = runner.flat * (3.6 / Math.max(1.6, cost));
+    return Math.min(runner.vmax, Math.max(runner.vmin, v));
+  }
+
+  /* CdA and Crr are the usual textbook figures for an upright recreational
+     rider; the power is what such a rider holds without training for it.
+     `foot-walking` is the profile the app routes "Run" on, so it is timed as
+     a run — walking pace over a 25 km route is not what anyone means by it. */
+  const PACE_MODELS = {
+    'cycling-road':     (g) => cyclingSpeed(g, { mass: 85, cda: 0.50, crr: 0.006, power: 95, vmax: 11.1, vmin: 1.1 }),
+    'cycling-regular':  (g) => cyclingSpeed(g, { mass: 88, cda: 0.55, crr: 0.008, power: 95, vmax: 9.7, vmin: 1.0 }),
+    /* 6.9 m/s is the 25 km/h the EU requires assist to cut out at */
+    'cycling-electric': (g) => cyclingSpeed(g, { mass: 108, cda: 0.55, crr: 0.008, power: 250, vmax: 6.9, vmin: 2.0 }),
+    'cycling-mountain': (g) => cyclingSpeed(g, { mass: 90, cda: 0.58, crr: 0.012, power: 95, vmax: 8.3, vmin: 0.9 }),
+    'running':          (g) => runningSpeed(g, { flat: 2.78, vmax: 3.9, vmin: 1.1 }),
+    'foot-walking':     (g) => walkingSpeed(g, 1),
+    'foot-hiking':      (g) => walkingSpeed(g, 0.8)
+  };
+
+  /**
+   * Moving time in seconds, integrated over the track so every climb is paid
+   * for and every descent is credited.
+   *
+   * Grades are measured over bins of at least `BIN_METRES` rather than between
+   * adjacent points: DEM elevation carries a metre or two of noise, and across
+   * a 10 m gap that noise alone reads as a 20% wall.
+   */
+  function estimateDuration(points, profile, binMetres) {
+    if (!Array.isArray(points) || points.length < 2) return 0;
+    const speedAt = PACE_MODELS[profile] || PACE_MODELS['cycling-road'];
+    const BIN_METRES = binMetres > 0 ? binMetres : 80;
+    let seconds = 0, run = 0, rise = 0, haveRise = true;
+
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const step = haversine(a, b);
+      if (!(step > 0)) continue;
+      run += step;
+      if (Number.isFinite(a.ele) && Number.isFinite(b.ele)) rise += b.ele - a.ele;
+      else haveRise = false;
+      if (run >= BIN_METRES || i === points.length - 1) {
+        const grade = haveRise ? Math.max(-MAX_GRADE, Math.min(MAX_GRADE, rise / run)) : 0;
+        seconds += run / speedAt(grade);
+        run = 0; rise = 0; haveRise = true;
+      }
+    }
+    return Math.round(seconds);
+  }
+
   function gradeStats(points, windowMetres) {
     const win = windowMetres || 100;
     const dists = cumulativeDistances(points);
@@ -1303,7 +1441,7 @@ globalThis.MapToGPX = (function () {
     isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseGeocodeParam, parseLatLng, decodeSegment,
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint,
-    niceStep, axisTicks, gradeStats,
+    niceStep, axisTicks, gradeStats, estimateDuration, PACE_MODELS,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
     escapeXml, buildGpx, validateGpx
   };
@@ -1967,11 +2105,15 @@ globalThis.MapToGPX = (function () {
   const E = globalThis.MTGEngine;
   const $ = (id) => document.getElementById(id);
 
+  /* `id` is the ORS routing profile; `pace` is how long it should take, which
+     is a separate question. "Run" routes on foot-walking because that is the
+     network a runner uses, but timing it at walking pace would be absurd. */
   const PROFILES = [
-    { id: 'cycling-road', name: 'Bike', sub: 'road bike', icon: 'b-bicycle' },
-    { id: 'foot-walking', name: 'Run', sub: 'walk / run', icon: 'b-person-simple-run' },
-    { id: 'foot-hiking', name: 'Hike', sub: 'trails', icon: 'b-person-simple-hike' }
+    { id: 'cycling-road', name: 'Bike', sub: 'road bike', icon: 'b-bicycle', pace: 'cycling-road' },
+    { id: 'foot-walking', name: 'Run', sub: 'road / path', icon: 'b-person-simple-run', pace: 'running' },
+    { id: 'foot-hiking', name: 'Hike', sub: 'trails', icon: 'b-person-simple-hike', pace: 'foot-hiking' }
   ];
+  const paceFor = (id) => (PROFILES.find((p) => p.id === id) || {}).pace || id;
   /* Icons that change with state; the rest are baked into the markup. */
   const ICON = {
     stepDone: 'f-check-circle',
@@ -1993,6 +2135,11 @@ globalThis.MapToGPX = (function () {
     { key: 'route', label: 'Route it on OpenStreetMap', icon: 'b-path' },
     { key: 'gpx', label: 'Measure and write the GPX', icon: 'b-file-code' }
   ];
+  /* Plain-language names for the models in the core, for the tooltip. */
+  const PACE_LABEL = {
+    'cycling-road': 'rider on a road bike', 'cycling-regular': 'rider', 'cycling-mountain': 'mountain biker',
+    'cycling-electric': 'e-bike rider', 'running': 'runner', 'foot-walking': 'walker', 'foot-hiking': 'hiker'
+  };
   const EXAMPLE = 'https://www.google.com/maps/dir/Monas,+Jakarta/Gelora+Bung+Karno/Ancol+Beach/';
 
   /* The palette lives in the stylesheet, not here — token() reads it back out
@@ -2009,7 +2156,7 @@ globalThis.MapToGPX = (function () {
     copyLabel: 'Copy GPX', shareLabel: 'Share link'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [];
-  let map = null, tileLayer = null, layer = null, renderer = null, hoverDot = null;
+  let map = null, tileLayer = null, layer = null, renderer = null, hoverDot = null, pins = [];
   let bounds = null, needsFit = false, fitKey = null, mapStamp = null, chartStamp = null;
   let series = null, clock = null, chartWired = false;
 
@@ -2109,6 +2256,7 @@ globalThis.MapToGPX = (function () {
       renderer, color: acc, weight: 4.5, opacity: .95, lineJoin: 'round'
     }).addTo(layer);
 
+    pins = [];
     waypoints.forEach((w, i) => {
       const last = i === waypoints.length - 1;
       const marker = L.circleMarker([w.lat, w.lon], {
@@ -2116,9 +2264,7 @@ globalThis.MapToGPX = (function () {
         fillColor: i === 0 ? ok : last ? acc : cool, fillOpacity: 1, bubblingMouseEvents: false
       }).addTo(layer);
       marker.bindTooltip(String(w.label || 'Stop'), { direction: 'top', offset: [0, -8] });
-      /* circleMarker is not draggable, so drag it by hand on the map surface */
-      marker.on('mousedown', (e) => beginDrag(i, marker, e));
-      marker.on('touchstart', (e) => beginDrag(i, marker, e));
+      pins[i] = marker;
     });
 
     splitPoints.forEach((p) => {
@@ -2137,23 +2283,147 @@ globalThis.MapToGPX = (function () {
     requestAnimationFrame(fitLater);
   }
 
-  function beginDrag(index, marker, evt) {
-    if (evt && evt.originalEvent) { evt.originalEvent.preventDefault(); evt.originalEvent.stopPropagation(); }
-    map.dragging.disable();
-    const move = (e) => marker.setLatLng(e.latlng);
+  /**
+   * Reordering the stops list by dragging a row's grip.
+   *
+   * The rows are the same route the pins are, seen as a sequence rather than a
+   * shape — so this is how you reverse a route or move a stop earlier without
+   * deleting and re-adding it. Only the grip carries `touch-action: none`,
+   * which leaves the rest of the row free to scroll the rail on a phone.
+   */
+  function beginReorder(index, row, ev) {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    const box = $('stops');
+    const rows = Array.from(box.children);
+    const step = row.offsetHeight;
+    if (!step || rows.length < 2) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    try { ev.target.setPointerCapture(ev.pointerId); } catch (_) { /* older engines */ }
+
+    const startY = ev.clientY;
+    let target = index;
+    box.classList.add('reordering');
+    row.classList.add('lifted');
+
+    const move = (e) => {
+      if (e.pointerId !== ev.pointerId) return;
+      const dy = e.clientY - startY;
+      row.style.transform = `translateY(${dy}px)`;
+      const next = Math.max(0, Math.min(rows.length - 1, index + Math.round(dy / step)));
+      if (next === target) return;
+      target = next;
+      /* Everything between the origin and the target steps aside by exactly one
+         row, so the gap the dragged row will land in is always visible. */
+      rows.forEach((r, j) => {
+        if (j === index) return;
+        let shift = 0;
+        if (target > index && j > index && j <= target) shift = -step;
+        else if (target < index && j < index && j >= target) shift = step;
+        r.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+    };
+
     const end = (e) => {
-      map.off('mousemove', move); map.off('mouseup', end);
-      map.off('touchmove', move); map.off('touchend', end);
+      if (e.pointerId !== ev.pointerId) return;
+      box.removeEventListener('pointermove', move);
+      box.removeEventListener('pointerup', end);
+      box.removeEventListener('pointercancel', end);
+      try { ev.target.releasePointerCapture(ev.pointerId); } catch (_) { /* already gone */ }
+      box.classList.remove('reordering');
+      row.classList.remove('lifted');
+      rows.forEach((r) => { r.style.transform = ''; });
+      if (e.type === 'pointercancel' || target === index) return;
+      waypoints.splice(target, 0, waypoints.splice(index, 1)[0]);
+      /* The order is the route, so a reorder is a re-route. render() rebuilds
+         the rows, which re-numbers the start and finish icons for free. */
+      routeCurrent();
+    };
+
+    box.addEventListener('pointermove', move);
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+  }
+
+  /**
+   * Dragging a pin, on any input device.
+   *
+   * Leaflet's canvas renderer only forwards mouse events to its layers --
+   * `on(container, 'click dblclick mousedown mouseup contextmenu', ...)` and
+   * nothing else -- so a `touchstart` bound to a circleMarker never fires and
+   * the pins were immovable on a phone. Pointer events cover mouse, touch and
+   * pen in one path, so the hit test lives here rather than in Leaflet.
+   */
+  function wirePinDragging() {
+    const el = $('map');
+    if (!el) return;
+    el.addEventListener('pointerdown', (ev) => {
+      if (!map || state.addMode || !pins.length) return;
+      const index = pinUnder(ev);
+      if (index < 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      beginDrag(index, ev);
+    });
+  }
+
+  /** Index of the pin under this pointer, or -1. */
+  function pinUnder(ev) {
+    const box = $('map').getBoundingClientRect();
+    const at = L.point(ev.clientX - box.left, ev.clientY - box.top);
+    let best = -1, bestDist = Infinity;
+    waypoints.forEach((w, i) => {
+      if (typeof w.lat !== 'number' || typeof w.lon !== 'number') return;
+      const d = map.latLngToContainerPoint([w.lat, w.lon]).distanceTo(at);
+      /* the drawn radius, plus slop — a fingertip is far less precise than a
+         cursor, and a pin you cannot grab may as well not be draggable */
+      const drawn = (i === 0 || i === waypoints.length - 1) ? 8 : 6;
+      const slop = ev.pointerType === 'mouse' ? 4 : 16;
+      if (d <= drawn + slop && d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  function beginDrag(index, ev) {
+    const el = $('map');
+    const marker = pins[index];
+    map.dragging.disable();
+    try { el.setPointerCapture(ev.pointerId); } catch (_) { /* older engines */ }
+
+    const toLatLng = (e) => {
+      const box = el.getBoundingClientRect();
+      return map.containerPointToLatLng([e.clientX - box.left, e.clientY - box.top]);
+    };
+    let moved = false;
+
+    const move = (e) => {
+      if (e.pointerId !== ev.pointerId) return;
+      if (!moved && Math.hypot(e.clientX - ev.clientX, e.clientY - ev.clientY) <= 3) return;
+      moved = true;
+      if (marker) marker.setLatLng(toLatLng(e));
+    };
+
+    const end = (e) => {
+      if (e.pointerId !== ev.pointerId) return;
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', end);
+      el.removeEventListener('pointercancel', end);
+      try { el.releasePointerCapture(ev.pointerId); } catch (_) { /* already gone */ }
       map.dragging.enable();
-      const ll = (e && e.latlng) || marker.getLatLng();
+      /* A tap is not a drag. Without this, touching a pin to read its tooltip
+         would relabel the stop and spend a routing request going nowhere. */
+      if (!moved || e.type === 'pointercancel') { if (marker) marker.setLatLng([waypoints[index].lat, waypoints[index].lon]); return; }
+      const ll = toLatLng(e);
       const w = waypoints[index];
       if (!w) return;
       w.lat = ll.lat; w.lon = ll.lng; w.kind = 'coords'; w.source = 'dragged'; w.display = null;
       w.label = `${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}`;
       routeCurrent();
     };
-    map.on('mousemove', move); map.on('mouseup', end);
-    map.on('touchmove', move); map.on('touchend', end);
+
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
   }
 
   /** Insert a new stop where the click sits along the current track. */
@@ -2435,7 +2705,12 @@ globalThis.MapToGPX = (function () {
 
     state.result = {
       stamp: String(Date.now()) + ':' + index,
-      points, name, distance, duration: option.duration, ascent, descent, stats, grades,
+      points, name, distance,
+      /* ORS's own figure, kept so the two can be compared, and ours, which is
+         the one shown — see estimateDuration in the core for why. */
+      orsDuration: option.duration,
+      duration: C.estimateDuration(points, paceFor(state.profile)),
+      ascent, descent, stats, grades,
       gpx, filename, valid: check.ok, errors: check.errors,
       hasElevation: points.some((p) => Number.isFinite(p.ele))
     };
@@ -2626,6 +2901,13 @@ globalThis.MapToGPX = (function () {
       $('r-sub').textContent = r.points.length.toLocaleString() + ' pts · ' + waypoints.length + ' stops · ' + s.profile;
       $('r-dist').textContent = fmtKm(r.distance);
       $('r-time').textContent = r.duration ? fmtDuration(r.duration) : '—';
+      /* The assumptions are not obvious from a single figure, so they live
+         where a curious reader will look for them. */
+      $('r-time').title = r.duration
+        ? 'Moving time for an average ' + (PACE_LABEL[paceFor(s.profile)] || 'person') + ', allowing for the gradient — ' +
+          (r.distance / 1000 / (r.duration / 3600)).toFixed(1) + ' km/h overall. Excludes stops.' +
+          (r.orsDuration ? ' OpenRouteService says ' + fmtDuration(r.orsDuration) + ', which ignores climbing.' : '')
+        : '';
       $('r-asc').innerHTML = '';
       $('r-asc').append(document.createTextNode(r.ascent == null ? '—' : r.ascent.toLocaleString()), el('u', null, 'm'));
       $('r-desc').innerHTML = '';
@@ -2690,6 +2972,15 @@ globalThis.MapToGPX = (function () {
           x.addEventListener('click', () => { waypoints.splice(i, 1); routeCurrent(); });
           row.appendChild(x);
         }
+        if (waypoints.length > 1) {
+          const grip = el('button', 'grip');
+          grip.appendChild(icon('b-dots-six-vertical', 'ic-e'));
+          grip.title = 'Drag to reorder this stop';
+          grip.setAttribute('aria-label', `Reorder ${w.label || 'stop'}, position ${i + 1} of ${waypoints.length}`);
+          grip.addEventListener('pointerdown', (ev) => beginReorder(i, row, ev));
+          row.appendChild(grip);
+        }
+        row.dataset.index = String(i);
         sw.appendChild(row);
       });
 
@@ -2818,6 +3109,7 @@ globalThis.MapToGPX = (function () {
       'The map library could not be loaded — routing and GPX download still work.';
   } else {
     initMap();
+    wirePinDragging();
     if (shared && shared.waypoints && state.key.trim()) setTimeout(routeCurrent, 60);
   }
 })();

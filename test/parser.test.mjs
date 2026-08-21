@@ -713,6 +713,94 @@ test('gradeStats measures sustained slope, not point-to-point noise', () => {
   assert.deepEqual(C.gradeStats(bare), { maxClimb: 0, maxDescent: 0, climbAt: null, descentAt: null });
 });
 
+/* A straight east-west line at a given latitude, so distance is predictable
+   and the only variable under test is what the elevation does. */
+function ladder(metres, step, eleAt) {
+  const pts = [];
+  for (let d = 0; d <= metres; d += step) {
+    pts.push({ lat: 0, lon: (d / 111319.49), ele: eleAt(d) });
+  }
+  return pts;
+}
+
+test('pace models put plausible speeds on plausible slopes', () => {
+  const kmh = (p, g) => C.PACE_MODELS[p](g) * 3.6;
+
+  /* flat ground, the numbers everyone has an intuition for */
+  assert.ok(Math.abs(kmh('foot-walking', 0) - 5) < 0.3, `walk flat ${kmh('foot-walking', 0)}`);
+  assert.ok(Math.abs(kmh('foot-hiking', 0) - 4) < 0.3, `hike flat ${kmh('foot-hiking', 0)}`);
+  assert.ok(kmh('cycling-road', 0) > 18 && kmh('cycling-road', 0) < 25, `bike flat ${kmh('cycling-road', 0)}`);
+
+  /* Tobler's curve peaks on a gentle descent, not on the flat — which is why
+     it is the right shape for walking rather than a constant */
+  assert.ok(kmh('foot-walking', -0.05) > kmh('foot-walking', 0));
+
+  /* every model slows down as it tilts up, and none of them stops dead */
+  for (const p of Object.keys(C.PACE_MODELS)) {
+    assert.ok(kmh(p, 0.08) < kmh(p, 0), `${p} should slow uphill`);
+    assert.ok(kmh(p, 0.20) > 0, `${p} should never reach zero`);
+    assert.ok(kmh(p, -0.08) > kmh(p, 0.08), `${p} downhill should beat uphill`);
+  }
+
+  /* an e-bike is assist-limited, not power-limited, on the flat */
+  assert.ok(kmh('cycling-electric', 0) <= 25.01, 'e-bike respects the 25 km/h assist cut-off');
+
+  /* running is its own curve, not walking scaled up: it is roughly twice
+     walking pace on the flat and loses far more of that to a climb */
+  assert.ok(Math.abs(kmh('running', 0) - 10) < 0.3, `run flat ${kmh('running', 0)}`);
+  assert.ok(kmh('running', 0) > kmh('foot-walking', 0) * 1.7, 'a run should not be a walk');
+  const runLoss = kmh('running', 0.08) / kmh('running', 0);
+  const walkLoss = kmh('foot-walking', 0.08) / kmh('foot-walking', 0);
+  assert.ok(runLoss < walkLoss, `a climb should cost a runner more of their pace (${runLoss.toFixed(2)} vs ${walkLoss.toFixed(2)})`);
+});
+
+test('a climb costs time that the same distance on the flat does not', () => {
+  const FLAT = ladder(4000, 20, () => 100);
+  const CLIMB = ladder(4000, 20, (d) => 100 + d * 0.05);     // a steady 5%
+
+  for (const p of ['cycling-road', 'foot-hiking']) {
+    const flat = C.estimateDuration(FLAT, p);
+    const climb = C.estimateDuration(CLIMB, p);
+    assert.ok(climb > flat, `${p}: climbing ${climb}s should beat flat ${flat}s`);
+  }
+
+  /* 4 km at ~21.5 km/h is a shade over 11 minutes; at 5% it is nearer 34 */
+  const flatMin = C.estimateDuration(FLAT, 'cycling-road') / 60;
+  const climbMin = C.estimateDuration(CLIMB, 'cycling-road') / 60;
+  assert.ok(Math.abs(flatMin - 11.2) < 1.5, `flat ${flatMin.toFixed(1)} min`);
+  assert.ok(climbMin > 30 && climbMin < 40, `5% climb ${climbMin.toFixed(1)} min`);
+});
+
+test('elevation noise between adjacent points does not invent a climb', () => {
+  /* ±1.5 m of DEM jitter every 10 m reads as a 30% grade point-to-point. The
+     binning is what stops that being charged as real climbing. */
+  let seed = 7;
+  const jitter = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return ((seed / 2147483648) - 0.5) * 3; };
+  const NOISY = ladder(3000, 10, () => 50 + jitter());
+  const CLEAN = ladder(3000, 10, () => 50);
+
+  const noisy = C.estimateDuration(NOISY, 'cycling-road');
+  const clean = C.estimateDuration(CLEAN, 'cycling-road');
+  assert.ok(Math.abs(noisy - clean) / clean < 0.15,
+    `noise moved the estimate from ${clean}s to ${noisy}s`);
+
+  /* and with no binning at all it would — this is the guard earning its keep */
+  const unbinned = C.estimateDuration(NOISY, 'cycling-road', 1);
+  assert.ok(unbinned > noisy * 1.3,
+    `without binning the noise should cost far more, got ${unbinned}s vs ${noisy}s`);
+});
+
+test('estimateDuration copes with degenerate and elevation-free input', () => {
+  assert.equal(C.estimateDuration([], 'cycling-road'), 0);
+  assert.equal(C.estimateDuration([{ lat: 0, lon: 0 }], 'cycling-road'), 0);
+  /* no elevation at all is treated as flat rather than skipped */
+  const noEle = ladder(2000, 20, () => undefined);
+  const secs = C.estimateDuration(noEle, 'cycling-road');
+  assert.ok(secs > 250 && secs < 450, `2 km flat by bike should be ~5-6 min, got ${secs}s`);
+  /* an unknown profile falls back rather than throwing */
+  assert.ok(C.estimateDuration(noEle, 'teleport') > 0);
+});
+
 test('chunkWaypoints overlaps by one so the legs stitch back together', () => {
   const wps = Array.from({ length: 7 }, (_, i) => ({ lat: i, lon: i }));
   assert.deepEqual(C.chunkWaypoints(wps, 25), [wps]);
