@@ -3231,9 +3231,34 @@ globalThis.MapToGPX = (function () {
 
   /** The header button and the line under Download, from whichever
       destinations are configured. */
+  /**
+   * Is this visitor most likely paying from Indonesia?
+   *
+   * The browser's own time zone, not an IP lookup: it costs no request, works
+   * offline, and nothing about the visitor leaves the page. The tz database
+   * carries exactly four Indonesian zones and none of the neighbours collide
+   * with them, so the test is unambiguous where it fires.
+   *
+   * Language is a weak second signal -- plenty of Indonesian phones run in
+   * English -- so it only gets a say when the time zone is unreadable.
+   */
+  function paysFromIndonesia() {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz) return /^Asia\/(Jakarta|Pontianak|Makassar|Jayapura)$/.test(tz);
+    } catch (_) { /* very old engine: fall through to the language */ }
+    return /^id\b/i.test(navigator.language || '');
+  }
+
+  /**
+   * The header button and the line under Download.
+   *
+   * Where both destinations exist the visitor's likely one leads, but neither
+   * is ever hidden: an Indonesian with a card can still reach Ko-fi, and the
+   * guess being wrong should cost a reader one extra word, not the option.
+   */
   function wireSupport() {
-    const primary = SUPPORT_URL || SUPPORT_URL_ID;
-    if (!primary) return;
+    if (!SUPPORT_URL && !SUPPORT_URL_ID) return;
 
     const link = (href, text) => {
       const a = el('a', null, text);
@@ -3241,17 +3266,26 @@ globalThis.MapToGPX = (function () {
       return a;
     };
 
-    $('support').href = primary;
+    const localFirst = !!SUPPORT_URL_ID && paysFromIndonesia();
+    const ordered = (localFirst
+      ? [[SUPPORT_URL_ID, 'tip via QRIS'], [SUPPORT_URL, 'buy me a coffee']]
+      : [[SUPPORT_URL, 'buy me a coffee'], [SUPPORT_URL_ID, 'tip via QRIS']]
+    ).filter(([href]) => !!href);
+
+    /* Alone, either destination is just "buy me a coffee" -- naming the rail
+       only earns its place when there is a second option to tell it from. */
+    if (ordered.length === 1) ordered[0][1] = 'buy me a coffee';
+
+    $('support').href = ordered[0][0];
     $('support').hidden = false;
 
     const line = $('tipjar-text');
     line.textContent = '';
     line.appendChild(document.createTextNode('Free, and staying that way. If it saved you a job — '));
-    if (SUPPORT_URL) line.appendChild(link(SUPPORT_URL, 'buy me a coffee'));
-    if (SUPPORT_URL && SUPPORT_URL_ID) line.appendChild(document.createTextNode(', or '));
-    /* Naming the payment rail rather than the country: someone in Jakarta
-       recognises QRIS instantly, and it says nothing about where you are. */
-    if (SUPPORT_URL_ID) line.appendChild(link(SUPPORT_URL_ID, SUPPORT_URL ? 'tip via QRIS' : 'buy me a coffee'));
+    ordered.forEach(([href, text], i) => {
+      if (i) line.appendChild(document.createTextNode(', or '));
+      line.appendChild(link(href, text));
+    });
     line.appendChild(document.createTextNode('.'));
     $('tipjar').hidden = false;
   }
