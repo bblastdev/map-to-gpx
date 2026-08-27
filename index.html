@@ -2335,7 +2335,8 @@ globalThis.MapToGPX = (function () {
       const last = i === waypoints.length - 1;
       const marker = L.circleMarker([w.lat, w.lon], {
         renderer, radius: (i === 0 || last) ? 8 : 6, color: surf, weight: 3,
-        fillColor: i === 0 ? ok : last ? acc : cool, fillOpacity: 1, bubblingMouseEvents: false
+        fillColor: i === 0 ? ok : last ? acc : midPinColour(i, waypoints.length - 2),
+        fillOpacity: 1, bubblingMouseEvents: false
       }).addTo(layer);
       marker.bindTooltip(String(w.label || 'Stop'), { direction: 'top', offset: [0, -8] });
       pins[i] = marker;
@@ -2864,6 +2865,24 @@ globalThis.MapToGPX = (function () {
     return svg;
   }
 
+  /**
+   * The colour of an intermediate stop's pin, by its place in the route.
+   *
+   * Every middle stop used to be the same blue, so on a route with four of
+   * them the map told you where the stops were and nothing about which was
+   * which. Rotating the hue across the sequence makes the colour carry the
+   * order: the pin you are looking at says how far along it is, and the row in
+   * the list wearing that colour is the one it belongs to.
+   *
+   * The band runs cyan to violet, chosen to stay clear of the olive start and
+   * the orange finish so the two ends keep their meaning.
+   */
+  function midPinColour(index, midCount) {
+    if (midCount <= 1) return token('--cool');
+    const hue = 190 + ((index - 1) / (midCount - 1)) * 110;
+    return `hsl(${Math.round(hue)}, 58%, 66%)`;
+  }
+
   /** Repoint an existing <use> at a different sprite symbol. */
   function setIcon(useId, id) {
     const u = $(useId);
@@ -3047,7 +3066,9 @@ globalThis.MapToGPX = (function () {
         mid.append(
           el('span', 'lab', w.label || 'Stop'),
           el('span', 'sub', (typeof w.lat === 'number' ? w.lat.toFixed(4) + ', ' + w.lon.toFixed(4) : '—') + origin));
-        row.append(icon(i === 0 ? ICON.start : last ? ICON.finish : ICON.mid, 'ic-h'), mid);
+        const glyph = icon(i === 0 ? ICON.start : last ? ICON.finish : ICON.mid, 'ic-h');
+        if (!(i === 0 || last)) glyph.style.color = midPinColour(i, waypoints.length - 2);
+        row.append(glyph, mid);
         if (!(i === 0 || last)) {
           const x = el('button', 'x');
           x.appendChild(icon('b-x', 'ic-b'));
