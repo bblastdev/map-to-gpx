@@ -2148,15 +2148,28 @@ globalThis.MapToGPX = (function () {
   const E = globalThis.MTGEngine;
   const $ = (id) => document.getElementById(id);
 
-  /* `id` is the ORS routing profile; `pace` is how long it should take, which
-     is a separate question. "Run" routes on foot-walking because that is the
-     network a runner uses, but timing it at walking pace would be absurd. */
+  /* Three separate questions, so three fields. `id` is what the app calls the
+     profile and what a shared link carries; `ors` is the network it routes on;
+     `pace` is how long it should take.
+
+     Run asks ORS for a bike route, not a walking one. foot-walking is correct
+     about where a person may legally go and useless about where anyone would
+     actually run: measured on a Purwokerto route it put 55% of the distance on
+     footways and gangs. The same pair on cycling-regular came back 0% footway,
+     77% Road, 20% State Road. A runner on cycleways and quiet roads is closer
+     to the truth than a runner threading back alleys.
+
+     cycling-regular rather than cycling-road on purpose: it is the more
+     permissive of the two, taking cycleways and shared paths, so a stop
+     dropped somewhere a road bike would refuse still connects. */
   const PROFILES = [
     { id: 'cycling-road', name: 'Bike', sub: 'road bike', icon: 'b-bicycle', pace: 'cycling-road' },
-    { id: 'foot-walking', name: 'Run', sub: 'road / path', icon: 'b-person-simple-run', pace: 'running' },
+    { id: 'foot-walking', name: 'Run', sub: 'roads', icon: 'b-person-simple-run',
+      ors: 'cycling-regular', pace: 'running' },
     { id: 'foot-hiking', name: 'Hike', sub: 'trails', icon: 'b-person-simple-hike', pace: 'foot-hiking' }
   ];
   const paceFor = (id) => (PROFILES.find((p) => p.id === id) || {}).pace || id;
+  const orsFor  = (id) => (PROFILES.find((p) => p.id === id) || {}).ors  || id;
   /* Icons that change with state; the rest are baked into the markup. */
   const ICON = {
     stepDone: 'f-check-circle',
@@ -2709,7 +2722,7 @@ globalThis.MapToGPX = (function () {
 
   async function runRoute(withLabels) {
     const eng = engine();
-    const out = await eng.route(state.profile, waypoints, progress);
+    const out = await eng.route(orsFor(state.profile), waypoints, progress);
     plan = out.plan;
     splitPoints = eng.legSplitPoints.concat(out.chosen.splitPoints || []);
     splitNotes = eng.legSplitNotes.concat(out.chosen.note ? [out.chosen.note] : []);
@@ -2732,7 +2745,7 @@ globalThis.MapToGPX = (function () {
       startClock();
       try {
         const eng = engine();
-        await eng.realiseCorridor(state.profile, plan, opt, (m) => progress(m, 'route'));
+        await eng.realiseCorridor(orsFor(state.profile), plan, opt, (m) => progress(m, 'route'));
         splitPoints = eng.legSplitPoints.concat(opt.splitPoints || []);
         splitNotes = eng.legSplitNotes.concat(opt.note ? [opt.note] : []);
       } catch (err) { return fail(err); }
@@ -2756,7 +2769,10 @@ globalThis.MapToGPX = (function () {
     const descent = option.descent != null ? Math.round(option.descent) : stats.descent;
     const distance = option.distance || C.cumulativeDistances(points).pop();
     const grades = C.gradeStats(points);
-    const profile = state.profile;
+    /* The activity, not the ORS profile underneath it. Run routes on
+       cycling-regular, so "foot-walking" in a filename or a GPX description
+       would be describing plumbing rather than the ride. */
+    const profile = paceFor(state.profile);
 
     const gpx = C.buildGpx({
       points, name, profile,
@@ -2963,7 +2979,9 @@ globalThis.MapToGPX = (function () {
 
     if (r) {
       $('r-name').textContent = r.name;
-      $('r-sub').textContent = r.points.length.toLocaleString() + ' pts · ' + waypoints.length + ' stops · ' + s.profile;
+      const activity = (PROFILES.find((p) => p.id === s.profile) || {}).name || s.profile;
+      $('r-sub').textContent = r.points.length.toLocaleString() + ' pts · ' +
+        waypoints.length + ' stops · ' + activity.toLowerCase();
       $('r-dist').textContent = fmtKm(r.distance);
       $('r-time').textContent = r.duration ? fmtDuration(r.duration) : '—';
       /* The assumptions are not obvious from a single figure, so they live
