@@ -115,13 +115,12 @@
      Convert, which is the only thing on this page anyone came to press. */
   .support {
     flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px;
-    border: 0; border-bottom: 0; background: var(--surf3); color: var(--ink);
+    border: 0; border-bottom: 0; background: var(--bar); color: var(--barink);
     font: 700 9.8px/1 var(--font); letter-spacing: .14em; text-transform: uppercase;
     text-decoration: none; opacity: 1; cursor: pointer;
   }
   .support .ic { color: var(--acc); letter-spacing: 0; }
-  .support:hover { background: var(--acc); color: var(--accink); }
-  .support:hover .ic { color: var(--accink); }
+  .support:hover { color: var(--acc); }
   @media (max-width: 400px) { .support { padding: 0 12px; } .support span { display: none; } }
 
   /* ── layout ─────────────────────────────────────────────────────────── */
@@ -363,6 +362,19 @@
   .filler { flex: 1; min-height: 0; background: var(--fill); }
 
   /* ── map pane ───────────────────────────────────────────────────────── */
+  /* Leaflet sets user-select on its tiles and marker icons but not on the
+     container, and never sets touch-callout -- so a long press on the canvas
+     the pins are drawn on selects text and raises iOS's callout menu instead
+     of starting a drag. touch-action alone does not cover this. */
+  .mapwrap, #map, .stop .grip {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  /* While a drag is live, nothing anywhere should be selectable -- a finger
+     that slides off the pin would otherwise start highlighting the page. */
+  body.grabbing, body.grabbing * {
+    -webkit-user-select: none !important; user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
   .mapwrap { position: relative; flex: 1; min-height: 164px; }
   #map { position: absolute; inset: 0; background: var(--surf2); }
   .mapctl { position: absolute; top: 0; right: 0; z-index: 500; display: flex; gap: 2px; }
@@ -2350,6 +2362,7 @@ globalThis.MapToGPX = (function () {
 
     const startY = ev.clientY;
     let target = index;
+    document.body.classList.add('grabbing');
     box.classList.add('reordering');
     row.classList.add('lifted');
 
@@ -2377,6 +2390,7 @@ globalThis.MapToGPX = (function () {
       box.removeEventListener('pointerup', end);
       box.removeEventListener('pointercancel', end);
       try { ev.target.releasePointerCapture(ev.pointerId); } catch (_) { /* already gone */ }
+      document.body.classList.remove('grabbing');
       box.classList.remove('reordering');
       row.classList.remove('lifted');
       rows.forEach((r) => { r.style.transform = ''; });
@@ -2435,6 +2449,7 @@ globalThis.MapToGPX = (function () {
     const el = $('map');
     const marker = pins[index];
     map.dragging.disable();
+    document.body.classList.add('grabbing');
     try { el.setPointerCapture(ev.pointerId); } catch (_) { /* older engines */ }
 
     const toLatLng = (e) => {
@@ -2456,6 +2471,7 @@ globalThis.MapToGPX = (function () {
       el.removeEventListener('pointerup', end);
       el.removeEventListener('pointercancel', end);
       try { el.releasePointerCapture(ev.pointerId); } catch (_) { /* already gone */ }
+      document.body.classList.remove('grabbing');
       map.dragging.enable();
       /* A tap is not a drag. Without this, touching a pin to read its tooltip
          would relabel the stop and spend a routing request going nowhere. */
