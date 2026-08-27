@@ -121,7 +121,9 @@
   }
   .support .ic { color: var(--acc); letter-spacing: 0; }
   .support:hover { color: var(--acc); }
-  @media (max-width: 400px) { .support { padding: 0 12px; } .support span { display: none; } }
+  /* The word stays on a phone. Hiding it left a bare heart, which reads as
+     decoration rather than something you can press. */
+  @media (max-width: 400px) { .support { padding: 0 12px; gap: 6px; } }
 
   /* ── layout ─────────────────────────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-wrap: wrap; align-items: stretch; gap: 2px; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
