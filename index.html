@@ -2144,7 +2144,16 @@ globalThis.MapToGPX = (function () {
 
   /* The palette lives in the stylesheet, not here — token() reads it back out
      of the computed style, so there is nothing to mirror. */
-  const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  /* CARTO began requiring a key on their raster basemaps -- unkeyed tiles come
+     back stamped "API KEY REQUIRED". Theirs is free (5 million tiles a month,
+     no account needed) and is issued against a domain, which is why it sits
+     here in the page rather than behind the proxy: it is a publishable key
+     like a Mapbox public token, and proxying tile traffic would be slow and
+     pointless. Request one at carto.com/basemaps/apikey.
+     Empty is valid -- the map still works, just watermarked. */
+  const CARTO_KEY = 'cb1_2aq4_1_babdbcd2cfb72b8cd0933e61';
+  const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' +
+    (CARTO_KEY ? '?key=' + encodeURIComponent(CARTO_KEY) : '');
   const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
 
   /* ── state ──────────────────────────────────────────────────────────── */
