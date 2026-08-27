@@ -111,6 +111,18 @@
   .brand .mark { color: var(--acc); }
   .brand .name { font: 800 16.4px/1 var(--font); letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; }
   @media (max-width: 400px) { .brand { padding: 0 11.5px; gap: 8.2px; } .brand .name { font-size: 13.9px; } }
+  /* Quiet on purpose. It sits beside the wordmark rather than competing with
+     Convert, which is the only thing on this page anyone came to press. */
+  .support {
+    flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px;
+    border: 0; border-bottom: 0; background: var(--surf3); color: var(--ink);
+    font: 700 9.8px/1 var(--font); letter-spacing: .14em; text-transform: uppercase;
+    text-decoration: none; opacity: 1; cursor: pointer;
+  }
+  .support .ic { color: var(--acc); letter-spacing: 0; }
+  .support:hover { background: var(--acc); color: var(--accink); }
+  .support:hover .ic { color: var(--accink); }
+  @media (max-width: 400px) { .support { padding: 0 12px; } .support span { display: none; } }
 
   /* ── layout ─────────────────────────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-wrap: wrap; align-items: stretch; gap: 2px; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
@@ -337,6 +349,13 @@
   .pair { display: flex; gap: 2px; margin-top: 2px; }
   .pair button { display: flex; align-items: center; justify-content: center; gap: 7.4px; flex: 1; min-height: 42px; border: 0; background: var(--surf2); color: var(--ink); font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer; }
   .pair button .ic { letter-spacing: 0; }
+  .tipjar {
+    display: flex; align-items: flex-start; gap: 9px; margin-top: 13px;
+    color: var(--ink3); font: 400 11.5px/1.5 var(--font);
+  }
+  .tipjar .ic { color: var(--acc); margin-top: 3px; flex: none; }
+  .tipjar a { color: var(--acc); border-bottom: 1px solid currentColor; opacity: 1; }
+  .tipjar a:hover { color: var(--ink); }
 
   .foot { background: var(--surf2); color: var(--ink3); padding: 14.8px 18px; font: 400 9.8px/1.65 var(--font); }
   /* A short rail would otherwise end mid-column and show the ground below the
@@ -431,6 +450,7 @@
   <symbol id="b-arrow-right" viewBox="0 0 256 256"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></symbol>
   <symbol id="f-path" viewBox="0 0 256 256"><path d="M228,200a28,28,0,0,1-54.83,8H72a48,48,0,0,1,0-96h96a24,24,0,0,0,0-48H72a8,8,0,0,1,0-16h96a40,40,0,0,1,0,80H72a32,32,0,0,0,0,64H173.17A28,28,0,0,1,228,200Z"/></symbol>
   <symbol id="f-warning-circle" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z"/></symbol>
+  <symbol id="f-heart" viewBox="0 0 256 256"><path d="M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z"/></symbol>
   <symbol id="f-info" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-4,48a12,12,0,1,1-12,12A12,12,0,0,1,124,72Zm12,112a16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40a8,8,0,0,1,0,16Z"/></symbol>
   <symbol id="f-radio-button" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm56-88a56,56,0,1,1-56-56A56.06,56.06,0,0,1,184,128Z"/></symbol>
   <symbol id="f-check-circle" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm45.66,85.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
@@ -448,6 +468,9 @@
       <svg class="ic ic-j mark" aria-hidden="true"><use href="#f-path"/></svg>
       <div class="name">Map to GPX</div>
     </div>
+    <a class="support" id="support" hidden target="_blank" rel="noopener noreferrer">
+      <svg class="ic ic-d" aria-hidden="true"><use href="#f-heart"/></svg><span>Support</span>
+    </a>
   </header>
 
   <main class="main">
@@ -574,6 +597,12 @@
           <div class="pair">
             <button id="btn-copy"><svg class="ic ic-e" aria-hidden="true"><use href="#b-copy" id="copy-icon"/></svg><span id="copy-label">Copy GPX</span></button>
             <button id="btn-share"><svg class="ic ic-e" aria-hidden="true"><use href="#b-share-network" id="share-icon"/></svg><span id="share-label">Share link</span></button>
+          </div>
+          <!-- Someone who just got the file they came for is the only person
+               with any reason to want this. It is a sentence, not a button. -->
+          <div class="tipjar" id="tipjar" hidden>
+            <svg class="ic ic-b" aria-hidden="true"><use href="#f-heart"/></svg>
+            <span id="tipjar-text"></span>
           </div>
         </div>
       </div>
@@ -2152,6 +2181,15 @@ globalThis.MapToGPX = (function () {
      pointless. Request one at carto.com/basemaps/apikey.
      Empty is valid -- the map still works, just watermarked. */
   const CARTO_KEY = 'cb1_2aq4_1_babdbcd2cfb72b8cd0933e61';
+
+  /* Where "Support" points. Both empty means neither the header button nor
+     the line under Download ever appears, so nothing ships as a dead link.
+     Two of them because no single platform reaches both audiences: Ko-fi and
+     Buy Me a Coffee want a card or PayPal, which much of Indonesia does not
+     have, and Saweria and Trakteer take QRIS, GoPay, OVO and DANA, which
+     nobody outside Indonesia can use. */
+  const SUPPORT_URL = '';       // global — ko-fi.com/you, buymeacoffee.com/you
+  const SUPPORT_URL_ID = '';    // Indonesia — saweria.co/you, trakteer.id/you
   const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' +
     (CARTO_KEY ? '?key=' + encodeURIComponent(CARTO_KEY) : '');
   const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
@@ -3086,6 +3124,33 @@ globalThis.MapToGPX = (function () {
   $('key').addEventListener('input', (e) => { state.key = e.target.value; render(); });
   $('resolver').addEventListener('input', (e) => { state.resolver = e.target.value; });
 
+  /** The header button and the line under Download, from whichever
+      destinations are configured. */
+  function wireSupport() {
+    const primary = SUPPORT_URL || SUPPORT_URL_ID;
+    if (!primary) return;
+
+    const link = (href, text) => {
+      const a = el('a', null, text);
+      a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      return a;
+    };
+
+    $('support').href = primary;
+    $('support').hidden = false;
+
+    const line = $('tipjar-text');
+    line.textContent = '';
+    line.appendChild(document.createTextNode('Free, and staying that way. If it saved you a job — '));
+    if (SUPPORT_URL) line.appendChild(link(SUPPORT_URL, 'buy me a coffee'));
+    if (SUPPORT_URL && SUPPORT_URL_ID) line.appendChild(document.createTextNode(', or '));
+    /* Naming the payment rail rather than the country: someone in Jakarta
+       recognises QRIS instantly, and it says nothing about where you are. */
+    if (SUPPORT_URL_ID) line.appendChild(link(SUPPORT_URL_ID, SUPPORT_URL ? 'tip via QRIS' : 'buy me a coffee'));
+    line.appendChild(document.createTextNode('.'));
+    $('tipjar').hidden = false;
+  }
+
   /* ── boot ───────────────────────────────────────────────────────────── */
 
   /* A key from config.local.js means nothing to ask for — the field stays in
@@ -3099,6 +3164,8 @@ globalThis.MapToGPX = (function () {
   const served = location.protocol === 'http:' || location.protocol === 'https:';
   state.resolver = served ? '/api/resolve' : '';
   state.proxy = served ? '/api/route' : '';
+
+  wireSupport();
 
   const shared = readShare();
   if (shared) {
