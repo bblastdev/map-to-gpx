@@ -2330,6 +2330,8 @@ globalThis.MapToGPX = (function () {
       renderer, color: acc, weight: 4.5, opacity: .95, lineJoin: 'round'
     }).addTo(layer);
 
+    drawDirectionArrows(r.points, token('--ink'));
+
     pins = [];
     waypoints.forEach((w, i) => {
       const last = i === waypoints.length - 1;
@@ -2863,6 +2865,52 @@ globalThis.MapToGPX = (function () {
     use.setAttribute('href', '#' + id);
     svg.appendChild(use);
     return svg;
+  }
+
+  /**
+   * Arrowheads along the line, so the track says which way round it goes.
+   *
+   * On an out-and-back or a loop the shape alone cannot tell you, and a GPX
+   * loaded the wrong way round is a real ride gone wrong. Drawn in the page's
+   * ink on top of the line rather than punched out of it: a cut-out reads as a
+   * gap in the track, which is the one thing an arrow must not look like.
+   */
+  function drawDirectionArrows(points, colour) {
+    if (!layer || points.length < 2) return;
+    const dists = C.cumulativeDistances(points);
+    const total = dists[dists.length - 1];
+    if (!(total > 0)) return;
+
+    /* Roughly one every 22nd of the route, never closer than 250 m -- enough
+       to read the direction at a glance without stippling the line. */
+    const gap = Math.max(250, total / 22);
+    let next = gap / 2;
+
+    for (let i = 1; i < points.length; i++) {
+      if (dists[i] < next) continue;
+      next += gap;
+      const a = points[i - 1], b = points[i];
+      /* Bearing in screen space, not on the ground: Web Mercator stretches
+         latitude by 1/cos(lat), so the longitude difference is what needs the
+         cosine to make the arrow point along the line as drawn. */
+      const midLat = ((a.lat + b.lat) / 2) * Math.PI / 180;
+      const dx = (b.lon - a.lon) * Math.cos(midLat);
+      const dy = b.lat - a.lat;
+      if (!dx && !dy) continue;
+      const angle = Math.atan2(dx, dy) * 180 / Math.PI;
+
+      L.marker([b.lat, b.lon], {
+        interactive: false,       /* never in the way of a click or a drag */
+        keyboard: false,
+        icon: L.divIcon({
+          className: '',
+          iconSize: [13, 13], iconAnchor: [6.5, 6.5],
+          html: '<svg viewBox="0 0 24 24" width="13" height="13" style="display:block;' +
+                'transform:rotate(' + angle.toFixed(1) + 'deg)">' +
+                '<path d="M12 4 L18.5 19 L12 15.4 L5.5 19 Z" fill="' + colour + '"/></svg>'
+        })
+      }).addTo(layer);
+    }
   }
 
   /**
