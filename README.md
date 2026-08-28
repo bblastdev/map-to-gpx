@@ -449,4 +449,6 @@ redesign stopped using can survive unnoticed.
 
 ## Licence
 
-MIT.
+MIT — see [LICENSE](LICENSE). Do what you like with it; the attribution the
+upstream services require (OpenRouteService, OpenStreetMap, CARTO) is a
+separate obligation and stays with the app.
