@@ -2373,6 +2373,10 @@ globalThis.MapToGPX = (function () {
     copyLabel: 'Copy GPX', shareLabel: 'Share link'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
+  /* Bumped by every route built. A ways-round search that finishes after its
+     route has been replaced -- dragged, reprofiled, reconverted -- belongs to
+     nothing, and must not push its options onto the plan that succeeded it. */
+  let altSearching = false, routeGen = 0;
   let map = null, tileLayer = null, layer = null, renderer = null, hoverDot = null, pins = [];
   let bounds = null, needsFit = false, fitKey = null, mapStamp = null, chartStamp = null;
   let series = null, clock = null, chartWired = false;
@@ -2890,7 +2894,8 @@ globalThis.MapToGPX = (function () {
   }
 
   async function runRoute(withLabels) {
-    altSearchDone = false;   /* a new route deserves a fresh look */
+    altSearchDone = false; altSearching = false;   /* a new route deserves a fresh look */
+    const gen = ++routeGen;
     const eng = engine();
     const out = await eng.route(orsFor(state.profile), waypoints, progress);
     plan = out.plan;
@@ -2904,6 +2909,38 @@ globalThis.MapToGPX = (function () {
     if (withLabels && plan.options.length > 1) {
       eng.labelOptions(plan, (p) => { if (plan === p) render(); });
     }
+    /* Google shows the other ways round without being asked, so this does too.
+       It starts only once the route is drawn and never touches state.busy, so
+       it costs no waiting -- the section fills itself in a moment later. */
+    if (plan.kind === 'direct' && plan.options.length === 1) findWaysRound(gen);
+  }
+
+  /**
+   * Look for ways round the route now on screen. Runs in the background: the
+   * route, its profile and its GPX are all usable while it works, and a failure
+   * costs nothing but the button coming back to ask again by hand.
+   */
+  async function findWaysRound(gen) {
+    if (altSearching || !plan || !state.result) return;
+    altSearching = true;
+    render();
+    let found = null;
+    try {
+      found = await engine().otherWaysRound(
+        orsFor(state.profile), plan.waypoints, state.result.points, () => { });
+    } catch (_) { found = null; }
+    if (gen !== routeGen) return;   /* a newer route owns the interface now */
+    altSearching = false;
+    if (found) {
+      altSearchDone = true;
+      found.forEach((c, i) => plan.options.push({
+        id: plan.options.length + i, label: null, ready: false,
+        via: c.via, corridorPoints: c.corridorPoints, corridorDistance: c.corridorDistance,
+        /* the car distance, shown until the real one is built */
+        distance: c.corridorDistance, ascent: null, descent: null, points: null
+      }));
+    }
+    render();
   }
 
   async function pickOption(index) {
@@ -3252,18 +3289,30 @@ globalThis.MapToGPX = (function () {
       if (r && opts.length) {
         const many = opts.length > 1;
         $('opt-count').textContent = many ? opts.length + ' ways round' : 'One way round';
-        $('opt-note').textContent =
-          many
-            ? (plan.kind === 'corridor'
-                ? 'Ways round from OpenRouteService — the ride is built along the one you pick'
-                : 'Alternatives from OpenRouteService, not from Google')
-            : plan.kind === 'single'
-              ? 'Alternatives only come back for a plain two-stop route. Remove the stops in between to see other ways round.'
-              : 'OpenRouteService offered no meaningfully different alternative here — it only suggests one when the detour shares less than about 60% of this route.';
+        const optNote = () => {
+          if (many) {
+            return plan.kind === 'corridor'
+              ? 'Ways round from OpenRouteService — the ride is built along the one you pick'
+              : 'Alternatives from OpenRouteService, not from Google';
+          }
+          if (altSearching) return 'Looking for other ways round on the road network…';
+          if (plan.kind === 'single') {
+            return 'Alternatives only come back for a plain two-stop route. Remove the stops in between to see other ways round.';
+          }
+          /* Having looked at the road network and found nothing is a different
+             answer from OpenRouteService declining to suggest one, and the
+             second sentence is only worth reading before the first is known. */
+          if (altSearchDone) {
+            return 'Nothing else to offer: OpenRouteService suggested no alternative, and the road network has no ' +
+              'other way round that is meaningfully different from this one.';
+          }
+          return 'OpenRouteService offered no meaningfully different alternative here — it only suggests one when the detour shares less than about 60% of this route.';
+        };
+        $('opt-note').textContent = optNote();
 
-        /* Only a plain two-stop route can have other ways round found for it,
-           and only worth offering once, so it hides again after a look. */
-        $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone;
+        /* The search now runs on its own after every route, so this is only a
+           way to ask again when that one failed. */
+        $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone || altSearching;
         $('btn-find-alt').disabled = s.busy;
 
         const box = $('opts');
@@ -3387,27 +3436,7 @@ globalThis.MapToGPX = (function () {
     $('link').focus();
   });
   $('btn-convert').addEventListener('click', convert);
-  $('btn-find-alt').addEventListener('click', async () => {
-    if (!plan || !state.result || state.busy) return;
-    Object.assign(state, { busy: true, error: null, step: 'route', progressMsg: 'Looking for other ways round…' });
-    render();
-    startClock();
-    let found = [];
-    try {
-      found = await engine().otherWaysRound(
-        orsFor(state.profile), plan.waypoints, state.result.points, (m) => progress(m, 'route'));
-    } catch (err) { stopClock(); return fail(err); }
-    stopClock();
-    altSearchDone = true;
-    Object.assign(state, { busy: false, step: null });
-    found.forEach((c, i) => plan.options.push({
-      id: plan.options.length + i, label: null, ready: false,
-      via: c.via, corridorPoints: c.corridorPoints, corridorDistance: c.corridorDistance,
-      /* the car distance, shown until the real one is built */
-      distance: c.corridorDistance, ascent: null, descent: null, points: null
-    }));
-    render();
-  });
+  $('btn-find-alt').addEventListener('click', () => { if (!state.busy) findWaysRound(routeGen); });
   $('btn-download').addEventListener('click', download);
   $('btn-copy').addEventListener('click', copyGpx);
   $('btn-share').addEventListener('click', shareRoute);
