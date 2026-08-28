@@ -673,6 +673,28 @@ test('mostDivergentPoint finds what makes an alternative different', () => {
   assert.equal(C.mostDivergentPoint(alt, []), null);
 });
 
+test('corridorPinCount holds an alternative to its corridor without over-pinning', () => {
+  /* a pin roughly every 1.2 km, so a 13.4 km way round gets eleven of them --
+     enough that the profile cannot wander back onto the main route between two */
+  assert.equal(C.corridorPinCount(13400), 11);
+  assert.equal(C.corridorPinCount(12000), 10);
+
+  /* short ways round still get enough pins to keep a shape */
+  assert.equal(C.corridorPinCount(600), 3);
+  assert.equal(C.corridorPinCount(3000), 3);
+
+  /* long ones stop asking for more coordinates than the request should carry */
+  assert.equal(C.corridorPinCount(200000), 14);
+  assert.equal(C.corridorPinCount(1e7), 14);
+
+  /* spacing is adjustable, and degenerate input does not throw */
+  assert.equal(C.corridorPinCount(12000, 2000), 6);
+  assert.equal(C.corridorPinCount(0), 3);
+  assert.equal(C.corridorPinCount(-5), 3);
+  assert.equal(C.corridorPinCount(NaN), 3);
+  assert.equal(C.corridorPinCount(undefined), 3);
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);

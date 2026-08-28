@@ -1123,6 +1123,19 @@ globalThis.MapToGPX = (function () {
     return out;
   }
 
+  /**
+   * How many points to hold a rebuilt alternative onto the corridor it was
+   * found on. One is not enough: pinned in the middle only, the profile is free
+   * to rejoin the main route either side of it, which is how a 13.4 km way
+   * round came back 15.2 km long with a loop in it. Capped at 14 because every
+   * pin is another coordinate in the same request, and a long way round keeps
+   * its shape without one every kilometre.
+   */
+  function corridorPinCount(distanceM, spacingM) {
+    if (!(distanceM > 0)) return 3;
+    return Math.max(3, Math.min(14, Math.round(distanceM / (spacingM || 1200))));
+  }
+
   /** Shortest distance from a point to any vertex of a track. */
   function distanceToTrack(p, track) {
     let best = Infinity;
@@ -1496,7 +1509,7 @@ globalThis.MapToGPX = (function () {
     GPX_NS, MAX_WAYPOINTS_PER_REQUEST, PROFILE_SUFFIX,
     isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseGeocodeParam, parseLatLng, decodeSegment,
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
-    interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint,
+    interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
     niceStep, axisTicks, gradeStats, estimateDuration, PACE_MODELS,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
     escapeXml, buildGpx, validateGpx
@@ -1690,6 +1703,14 @@ globalThis.MapToGPX = (function () {
          with intermediate waypoints is rejected outright. */
       if (opts && opts.alternatives && coords.length === 2) {
         payload.alternative_routes = { target_count: 3, weight_factor: 1.6, share_factor: 0.6 };
+      }
+      /* Corridors are borrowed by a foot or bike profile, so the car must be kept
+         off the roads those profiles are banned from. Without this the corridor
+         runs down a motorway, every pin on it snaps a few hundred metres to
+         whatever service road is nearest, and the ride detours to each one. */
+      if (opts && opts.avoidMotorways) {
+        payload.options = Object.assign({}, payload.options,
+          { avoid_features: ['highways', 'tollways'] });
       }
       /* No key of your own: go through this site's proxy, which spends the
          deployment's key behind rate limits. A pasted key always wins — it
@@ -1914,7 +1935,7 @@ globalThis.MapToGPX = (function () {
     async roadCorridor(waypoints, onProgress) {
       onProgress('Route too long in one piece — checking where the road actually runs…');
       try {
-        const geo = await this.orsDirections('driving-car', waypoints);
+        const geo = await this.orsDirections('driving-car', waypoints, { avoidMotorways: true });
         const f = geo.features[0];
         return {
           points: this.featureToPoints(f),
@@ -2035,9 +2056,14 @@ globalThis.MapToGPX = (function () {
       onProgress('Looking for other ways round…');
       let geo = null;
       try {
-        geo = await this.orsDirections('driving-car', waypoints, { alternatives: true });
+        geo = await this.orsDirections('driving-car', waypoints,
+          { alternatives: true, avoidMotorways: true });
       } catch (_) {
-        return [];   /* no alternatives is a fine answer; an error here is not worth raising */
+        /* Nowhere to go without a motorway happens — an estuary crossing, an
+           alpine tunnel. Take the corridor anyway; the pinning below is looser
+           than the ride, and a corridor is still better than no alternative. */
+        try { geo = await this.orsDirections('driving-car', waypoints, { alternatives: true }); }
+        catch (__) { return []; }
       }
       const kept = [];
       for (const f of (geo && geo.features) || []) {
@@ -2052,26 +2078,68 @@ globalThis.MapToGPX = (function () {
       return kept;
     },
 
-    /** Build one of those, by routing the real profile through its via point. */
+    /**
+     * Build one of those for real. The corridor found on the road network is the
+     * shape worth keeping — it is the same road Google offers — so the route is
+     * pinned to points spaced along the whole of it, not just to the one point
+     * where it strays furthest.
+     */
     async realiseVia(profile, plan, option, onProgress) {
       if (option.ready) return option;
       this.legSplitNotes = []; this.legSplitPoints = [];
-      const via = {
-        kind: 'coords', lat: option.via.lat, lon: option.via.lon, source: 'auto-split',
-        label: `${option.via.lat.toFixed(4)}, ${option.via.lon.toFixed(4)}`
-      };
-      const built = await this.routeSegment(
-        profile, [plan.waypoints[0], via, plan.waypoints[1]], onProgress, 1);
+      const asStop = (p) => ({
+        kind: 'coords', lat: p.lat, lon: p.lon, source: 'auto-split',
+        label: `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`
+      });
+      const along = (n) => C.sampleAlongTrack(option.corridorPoints, n + 1).map(asStop);
+
+      /* Pins hold the shape, but one can land where this profile cannot reach —
+         a slip road, the far bank of a river, a stretch of motorway the car was
+         allowed on. Thin them out rather than lose the whole way round. */
+      const dense = C.corridorPinCount(option.corridorDistance);
+      const tries = [along(dense)];
+      if (dense > 3) tries.push(along(3));
+      tries.push([asStop(option.via)]);
+
+      let built = null, held = 0, lastErr = null;
+      for (const pins of tries) {
+        if (!pins.length) continue;
+        try {
+          built = await this.routeSegment(
+            profile, [plan.waypoints[0], ...pins, plan.waypoints[1]], onProgress, 1);
+          held = pins.length;
+          break;
+        } catch (err) {
+          lastErr = err;
+          onProgress('That way round would not hold — trying it with fewer points…');
+        }
+      }
+      if (!built) throw lastErr;
+
       option.points = built.points;
       option.distance = built.distance;
       option.duration = built.duration;
       option.ascent = built.ascent;
       option.descent = built.descent;
-      option.splitPoints = [via];
-      option.note =
-        'This way round was found on the road network and then rebuilt for your profile, ' +
-        'forced through one point on the other road — the hollow marker on the map. ' +
-        'Drag it, or add your own stop, if the line is not quite the way you meant.';
+      /* Deliberately not drawn. These hold the shape; they are not stops anyone
+         chose, and a dozen hollow rings along the line only make it harder to read. */
+      option.splitPoints = [];
+
+      /* Whether the ride actually ended up on the road it was found on. Some
+         corridors simply cannot be ridden — a one-way system, a bike ban on the
+         only bridge — and saying so is better than presenting the detour as if it
+         were the alternative Google draws. */
+      const off = C.mostDivergentPoint(built.points, option.corridorPoints, 120);
+      const ratio = option.corridorDistance > 0 ? built.distance / option.corridorDistance : 1;
+      option.strayed = (off && off.distance > 600) || ratio > 1.2;
+      option.note = option.strayed
+        ? `Your profile could not follow all of that road, so this came out ` +
+          `${Math.round((ratio - 1) * 100)}% longer than the way round it was found on and leaves it by up to ` +
+          `${Math.round((off && off.distance) || 0)} m. It is a real route and the elevation is real, but it is ` +
+          `not the line Google would draw. Adding your own stops will do better than this did.`
+        : `This way round was found with a car profile kept off motorways and toll roads — near enough the ` +
+          `roads Google offers — then rebuilt for your profile and held to that road by ${held} points along ` +
+          `it. The line is OpenRouteService's own, so expect small differences from Google.`;
       option.ready = true;
       return option;
     },
@@ -2080,7 +2148,8 @@ globalThis.MapToGPX = (function () {
       onProgress('Route too long in one piece — looking for the ways round…');
       let geo = null;
       try {
-        geo = await this.orsDirections('driving-car', waypoints, { alternatives: true });
+        geo = await this.orsDirections('driving-car', waypoints,
+          { alternatives: true, avoidMotorways: true });
       } catch (_) { /* fall back to the straight-line split below */ }
 
       const limitM = parseFloat((/total distance of\s+([\d.]+)\s*meters/i.exec(limitErr.detail || '') || [])[1]) || 100000;
@@ -3333,7 +3402,7 @@ globalThis.MapToGPX = (function () {
     Object.assign(state, { busy: false, step: null });
     found.forEach((c, i) => plan.options.push({
       id: plan.options.length + i, label: null, ready: false,
-      via: c.via, corridorPoints: c.corridorPoints,
+      via: c.via, corridorPoints: c.corridorPoints, corridorDistance: c.corridorDistance,
       /* the car distance, shown until the real one is built */
       distance: c.corridorDistance, ascent: null, descent: null, points: null
     }));
