@@ -301,6 +301,14 @@
   .opt .lab { display: block; font: 700 12.3px/1.2 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .opt .facts { display: block; font: 500 9.8px/1.3 var(--font); letter-spacing: .08em; text-transform: uppercase; opacity: .68; margin-top: 4.1px; }
   .optnote { font: 400 9.8px/1.45 var(--font); color: var(--ink3); margin-top: 9.8px; }
+  .findalt {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    min-height: 36px; margin-top: 9.8px; border: 0; background: var(--surf3); color: var(--ink);
+    font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer;
+  }
+  .findalt .ic { letter-spacing: 0; }
+  .findalt:hover { background: var(--acc); color: var(--accink); }
+  .findalt:disabled { opacity: .55; cursor: progress; }
 
   .stops { display: flex; flex-direction: column; }
   .stop { display: flex; align-items: center; gap: 10.7px; padding: 9.8px 0; border-top: 1px solid var(--line); }
@@ -588,6 +596,9 @@
           </div>
           <div class="opts" id="opts" role="radiogroup" aria-label="Route options"></div>
           <div class="optnote" id="opt-note"></div>
+          <button class="findalt" id="btn-find-alt" hidden>
+            <svg class="ic ic-b" aria-hidden="true"><use href="#b-shuffle"/></svg>Look for other ways round
+          </button>
         </div>
 
         <div class="card">
@@ -1983,6 +1994,7 @@ globalThis.MapToGPX = (function () {
           const geo = await this.orsDirections(profile, waypoints, { alternatives: true });
           return {
             kind: 'direct',
+            waypoints,
             options: geo.features.map((f, i) => Object.assign(this.featureToRoute(f), { id: i, label: null, ready: true }))
           };
         } catch (err) {
@@ -2003,6 +2015,67 @@ globalThis.MapToGPX = (function () {
     },
 
     /** Alternatives of the driving corridor, as choices of "which way round". */
+    /**
+     * Other ways round, when the cycling profile would not offer any.
+     *
+     * ORS's bike profiles are far stingier with alternatives than its car one.
+     * Purwokerto to Baturaden returns three routes on driving-car and exactly
+     * one on cycling-road, at any weight_factor or share_factor -- the roads
+     * exist, the bike profile just will not propose them.
+     *
+     * So the car profile is used to *discover* corridors, never to route: each
+     * one is reduced to the single point where it strays furthest from the
+     * route already in hand, and that point is later handed back to the real
+     * profile as a stop to go via. What comes out is a genuine bike route that
+     * happens to take the other road.
+     *
+     * This costs a request, so it runs only when asked for.
+     */
+    async otherWaysRound(profile, waypoints, mainPoints, onProgress) {
+      onProgress('Looking for other ways round…');
+      let geo = null;
+      try {
+        geo = await this.orsDirections('driving-car', waypoints, { alternatives: true });
+      } catch (_) {
+        return [];   /* no alternatives is a fine answer; an error here is not worth raising */
+      }
+      const kept = [];
+      for (const f of (geo && geo.features) || []) {
+        const corridor = this.featureToPoints(f);
+        const via = C.mostDivergentPoint(corridor, mainPoints, 80);
+        /* Never straying 300 m from the route we already have means it is the
+           same road, not another way round. */
+        if (!via || via.distance < 300) continue;
+        if (kept.some((k) => C.haversine(k.via, via) < 500)) continue;
+        kept.push({ via, corridorPoints: corridor, corridorDistance: (f.properties.summary || {}).distance || 0 });
+      }
+      return kept;
+    },
+
+    /** Build one of those, by routing the real profile through its via point. */
+    async realiseVia(profile, plan, option, onProgress) {
+      if (option.ready) return option;
+      this.legSplitNotes = []; this.legSplitPoints = [];
+      const via = {
+        kind: 'coords', lat: option.via.lat, lon: option.via.lon, source: 'auto-split',
+        label: `${option.via.lat.toFixed(4)}, ${option.via.lon.toFixed(4)}`
+      };
+      const built = await this.routeSegment(
+        profile, [plan.waypoints[0], via, plan.waypoints[1]], onProgress, 1);
+      option.points = built.points;
+      option.distance = built.distance;
+      option.duration = built.duration;
+      option.ascent = built.ascent;
+      option.descent = built.descent;
+      option.splitPoints = [via];
+      option.note =
+        'This way round was found on the road network and then rebuilt for your profile, ' +
+        'forced through one point on the other road — the hollow marker on the map. ' +
+        'Drag it, or add your own stop, if the line is not quite the way you meant.';
+      option.ready = true;
+      return option;
+    },
+
     async corridorChoices(profile, waypoints, limitErr, onProgress) {
       onProgress('Route too long in one piece — looking for the ways round…');
       let geo = null;
@@ -2230,7 +2303,7 @@ globalThis.MapToGPX = (function () {
     error: null, result: null, selected: 0, addMode: false,
     copyLabel: 'Copy GPX', shareLabel: 'Share link'
   };
-  let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [];
+  let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
   let map = null, tileLayer = null, layer = null, renderer = null, hoverDot = null, pins = [];
   let bounds = null, needsFit = false, fitKey = null, mapStamp = null, chartStamp = null;
   let series = null, clock = null, chartWired = false;
@@ -2748,6 +2821,7 @@ globalThis.MapToGPX = (function () {
   }
 
   async function runRoute(withLabels) {
+    altSearchDone = false;   /* a new route deserves a fresh look */
     const eng = engine();
     const out = await eng.route(orsFor(state.profile), waypoints, progress);
     plan = out.plan;
@@ -2772,7 +2846,9 @@ globalThis.MapToGPX = (function () {
       startClock();
       try {
         const eng = engine();
-        await eng.realiseCorridor(orsFor(state.profile), plan, opt, (m) => progress(m, 'route'));
+        await (opt.via
+          ? eng.realiseVia(orsFor(state.profile), plan, opt, (m) => progress(m, 'route'))
+          : eng.realiseCorridor(orsFor(state.profile), plan, opt, (m) => progress(m, 'route')));
         splitPoints = eng.legSplitPoints.concat(opt.splitPoints || []);
         splitNotes = eng.legSplitNotes.concat(opt.note ? [opt.note] : []);
       } catch (err) { return fail(err); }
@@ -3116,6 +3192,11 @@ globalThis.MapToGPX = (function () {
               ? 'Alternatives only come back for a plain two-stop route. Remove the stops in between to see other ways round.'
               : 'OpenRouteService offered no meaningfully different alternative here — it only suggests one when the detour shares less than about 60% of this route.';
 
+        /* Only a plain two-stop route can have other ways round found for it,
+           and only worth offering once, so it hides again after a look. */
+        $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone;
+        $('btn-find-alt').disabled = s.busy;
+
         const box = $('opts');
         box.textContent = '';
         opts.forEach((o, i) => {
@@ -3237,6 +3318,27 @@ globalThis.MapToGPX = (function () {
     $('link').focus();
   });
   $('btn-convert').addEventListener('click', convert);
+  $('btn-find-alt').addEventListener('click', async () => {
+    if (!plan || !state.result || state.busy) return;
+    Object.assign(state, { busy: true, error: null, step: 'route', progressMsg: 'Looking for other ways round…' });
+    render();
+    startClock();
+    let found = [];
+    try {
+      found = await engine().otherWaysRound(
+        orsFor(state.profile), plan.waypoints, state.result.points, (m) => progress(m, 'route'));
+    } catch (err) { stopClock(); return fail(err); }
+    stopClock();
+    altSearchDone = true;
+    Object.assign(state, { busy: false, step: null });
+    found.forEach((c, i) => plan.options.push({
+      id: plan.options.length + i, label: null, ready: false,
+      via: c.via, corridorPoints: c.corridorPoints,
+      /* the car distance, shown until the real one is built */
+      distance: c.corridorDistance, ascent: null, descent: null, points: null
+    }));
+    render();
+  });
   $('btn-download').addEventListener('click', download);
   $('btn-copy').addEventListener('click', copyGpx);
   $('btn-share').addEventListener('click', shareRoute);
