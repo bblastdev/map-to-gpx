@@ -2882,11 +2882,11 @@ globalThis.MapToGPX = (function () {
     const total = dists[dists.length - 1];
     if (!(total > 0)) return;
 
-    /* Roughly one every 10th of the route, never closer than 700 m. Denser
-       than this and they stop reading as arrows on a line and start reading
-       as a dashed line: the direction is a fact you need once, not a texture
-       the track should be made of. */
-    const gap = Math.max(700, total / 10);
+    /* About six on any route, never closer than 400 m. Direction is a fact
+       you need once and then confirm occasionally -- enough arrows that one
+       is in view wherever you are looking, and few enough that the line still
+       reads as a line. */
+    const gap = Math.max(400, total / 6);
     let next = gap / 2;
 
     for (let i = 1; i < points.length; i++) {
@@ -2907,8 +2907,8 @@ globalThis.MapToGPX = (function () {
         keyboard: false,
         icon: L.divIcon({
           className: '',
-          iconSize: [13, 13], iconAnchor: [6.5, 6.5],
-          html: '<svg viewBox="0 0 24 24" width="13" height="13" style="display:block;' +
+          iconSize: [11, 11], iconAnchor: [5.5, 5.5],
+          html: '<svg viewBox="0 0 24 24" width="11" height="11" style="display:block;' +
                 'transform:rotate(' + angle.toFixed(1) + 'deg)">' +
                 '<path d="M12 4 L18.5 19 L12 15.4 L5.5 19 Z" fill="' + colour + '"/></svg>'
         })
