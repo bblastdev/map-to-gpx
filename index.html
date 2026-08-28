@@ -2318,15 +2318,35 @@ globalThis.MapToGPX = (function () {
     layer = L.layerGroup().addTo(map);
 
     /* The options not chosen, faint underneath, so the difference is visible
-       before you commit to one. */
+       before you commit to one -- and clickable, because pointing at the line
+       you want is how everyone expects to choose a route. */
     if (plan && plan.options.length > 1) {
       plan.options.forEach((opt, i) => {
         if (i === state.selected) return;
         const track = opt.points || opt.corridorPoints;
         if (!track || track.length < 2) return;
-        L.polyline(track.map((p) => [p.lat, p.lon]), {
+        const latlngs = track.map((p) => [p.lat, p.lon]);
+
+        /* An invisible fat line under the thin one. Leaflet hit-tests against
+           the stroke width, and a 2.5px dashed line is not something anyone is
+           going to hit with a fingertip. */
+        const hit = L.polyline(latlngs, {
+          renderer, color: cool, weight: 22, opacity: 0, interactive: true, bubblingMouseEvents: false
+        }).addTo(layer);
+        const shown = L.polyline(latlngs, {
           renderer, color: cool, weight: 2.5, opacity: .55, dashArray: '7 6', interactive: false
         }).addTo(layer);
+
+        hit.bindTooltip(`Take this way instead — ${fmtKm(opt.distance)} km`, { sticky: true });
+        hit.on('mouseover', () => shown.setStyle({ weight: 4, opacity: .95 }));
+        hit.on('mouseout', () => shown.setStyle({ weight: 2.5, opacity: .55 }));
+        hit.on('click', (e) => {
+          /* While placing a stop, a click on the map means "put it here" --
+             the line underneath must not steal that. */
+          if (state.addMode || state.busy) return;
+          L.DomEvent.stop(e);
+          pickOption(i);
+        });
       });
     }
 
