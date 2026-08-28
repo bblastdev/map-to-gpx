@@ -2454,7 +2454,15 @@ globalThis.MapToGPX = (function () {
     const r = state.result;
     /* Rebuilding thousands of polyline points on every render (the busy clock
        ticks once a second) is pure waste — only redraw on real change. */
-    const stamp = (r ? r.stamp : 'none') + '|' + state.selected + '|' + waypoints.length;
+    /* Options count and how many are built both belong in the stamp: ways round
+       arrive after the route they belong to, and building one swaps its line
+       from the corridor it was found on to the ride itself. Neither changes
+       r.stamp, so without them the alternatives are drawn only once something
+       else forces a redraw -- which used to mean they appeared only after you
+       had already picked one. */
+    const opts = (plan && plan.options) || [];
+    const stamp = (r ? r.stamp : 'none') + '|' + state.selected + '|' + waypoints.length +
+      '|' + opts.length + '|' + opts.reduce((n, o) => n + (o.ready ? 1 : 0), 0);
     if (mapStamp === stamp) return;
     mapStamp = stamp;
     if (layer) { layer.remove(); layer = null; }
