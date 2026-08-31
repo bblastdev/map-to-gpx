@@ -270,6 +270,11 @@
   .hero .big { display: flex; align-items: flex-end; justify-content: space-between; gap: 9.8px; margin-top: 16.4px; }
   .hero .big span { font: 300 clamp(62px, 17vw, 108px)/.82 var(--font); letter-spacing: -.055em; }
   .hero .big u { font: 700 10.7px/1 var(--font); letter-spacing: .16em; text-transform: uppercase; padding-bottom: 8.2px; }
+  .hero .units { display: flex; gap: 2px; margin-bottom: 4.9px; flex: none; }
+  .hero .unit { font: 700 10.7px/1 var(--font); letter-spacing: .16em; text-transform: uppercase;
+    padding: 6.6px 7.4px; background: transparent; color: var(--black); opacity: .5; cursor: pointer; }
+  .hero .unit[aria-checked="true"] { background: var(--black); color: var(--acid); opacity: 1; }
+  .hero .unit:focus-visible { outline: 2px solid var(--black); outline-offset: 2px; }
 
   .pair2 { display: flex; gap: 2px; }
   .climb { flex: 1 1 0; min-width: 0; background: var(--navy); color: var(--paper); padding: 16.4px; }
@@ -570,7 +575,14 @@
         <div class="hero">
           <div class="rname" id="r-name"></div>
           <div class="rsub" id="r-sub"></div>
-          <div class="big num"><span id="r-dist">—</span><u>km</u></div>
+          <div class="big num"><span id="r-dist">—</span>
+            <!-- The unit was already written here; making it the control puts the
+                 switch exactly where the reader is looking when they want it. -->
+            <div class="units" id="units" role="radiogroup" aria-label="Units">
+              <button type="button" class="unit" data-units="metric" role="radio" aria-checked="true">km</button>
+              <button type="button" class="unit" data-units="imperial" role="radio" aria-checked="false">mi</button>
+            </div>
+          </div>
         </div>
 
         <div class="pair2">
@@ -1165,6 +1177,33 @@ globalThis.MapToGPX = (function () {
     return best ? { lat: best.lat, lon: best.lon, distance: bestD } : null;
   }
 
+  /**
+   * What the figures on screen are counted in. Both factors are exact by
+   * definition — a mile is 1609.344 m and a foot 0.3048 m — so a route measured
+   * in one and read in the other loses nothing.
+   *
+   * The GPX is untouched by any of this. Its <ele> is metres by specification
+   * and carries no unit to declare, so a file downloaded in miles is the same
+   * file, byte for byte, as one downloaded in kilometres.
+   */
+  const UNITS = {
+    metric:   { distance: 'km', elevation: 'm',  speed: 'km/h', perDistance: 1000,     perElevation: 1 },
+    imperial: { distance: 'mi', elevation: 'ft', speed: 'mph',  perDistance: 1609.344, perElevation: 0.3048 }
+  };
+  const unitsFor = (name) => UNITS[name] || UNITS.metric;
+  const toDistance = (metres, name) => (Number(metres) || 0) / unitsFor(name).perDistance;
+  const toElevation = (metres, name) => (Number(metres) || 0) / unitsFor(name).perElevation;
+
+  /**
+   * Which to start in. Road distance is posted in miles in the United States
+   * and the United Kingdom and in kilometres everywhere else, so the region is
+   * the whole question — the language in front of it is not.
+   */
+  function defaultUnits(locale) {
+    const region = (/[-_]([A-Za-z]{2})(?:[-_]|$)/.exec(String(locale == null ? '' : locale)) || [])[1];
+    return /^(US|GB)$/i.test(region || '') ? 'imperial' : 'metric';
+  }
+
   /** A round-ish step (1, 2, 5 × 10ⁿ) giving roughly `targetTicks` divisions. */
   function niceStep(range, targetTicks) {
     if (!(range > 0)) return 1;
@@ -1511,6 +1550,7 @@ globalThis.MapToGPX = (function () {
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
     niceStep, axisTicks, gradeStats, estimateDuration, PACE_MODELS,
+    UNITS, unitsFor, toDistance, toElevation, defaultUnits,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
     escapeXml, buildGpx, validateGpx
   };
@@ -2370,7 +2410,8 @@ globalThis.MapToGPX = (function () {
     link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
-    copyLabel: 'Copy GPX', shareLabel: 'Share link'
+    copyLabel: 'Copy GPX', shareLabel: 'Share link',
+    units: 'metric'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
   /* Bumped by every route built. A ways-round search that finishes after its
@@ -2462,7 +2503,7 @@ globalThis.MapToGPX = (function () {
        had already picked one. */
     const opts = (plan && plan.options) || [];
     const stamp = (r ? r.stamp : 'none') + '|' + state.selected + '|' + waypoints.length +
-      '|' + opts.length + '|' + opts.reduce((n, o) => n + (o.ready ? 1 : 0), 0);
+      '|' + opts.length + '|' + opts.reduce((n, o) => n + (o.ready ? 1 : 0), 0) + '|' + state.units;
     if (mapStamp === stamp) return;
     mapStamp = stamp;
     if (layer) { layer.remove(); layer = null; }
@@ -2491,7 +2532,7 @@ globalThis.MapToGPX = (function () {
           renderer, color: cool, weight: 2.5, opacity: .55, dashArray: '7 6', interactive: false
         }).addTo(layer);
 
-        hit.bindTooltip(`Take this way instead — ${fmtKm(opt.distance)} km`, { sticky: true });
+        hit.bindTooltip(`Take this way instead — ${fmtDist(opt.distance)} ${U().distance}`, { sticky: true });
         hit.on('mouseover', () => shown.setStyle({ weight: 4, opacity: .95 }));
         hit.on('mouseout', () => shown.setStyle({ weight: 2.5, opacity: .55 }));
         hit.on('click', (e) => {
@@ -2722,7 +2763,7 @@ globalThis.MapToGPX = (function () {
        ResizeObserver below handles. */
     const W = Math.round(svg.clientWidth), H = Math.round(svg.clientHeight);
     if (W < 80 || H < 60) return;   /* collapsed pane: the observer comes back */
-    const stamp = (r ? r.stamp : 'empty') + '|' + W + 'x' + H;
+    const stamp = (r ? r.stamp : 'empty') + '|' + W + 'x' + H + '|' + state.units;
     if (chartStamp === stamp) return;
     chartStamp = stamp;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
@@ -2756,17 +2797,21 @@ globalThis.MapToGPX = (function () {
     const gridS = `stroke:${lineC};stroke-width:1`;
     const axisS = `fill:${ink3};font:600 10px Inter, system-ui, sans-serif;letter-spacing:.06em`;
     const p = [];
-    for (const t of C.axisTicks(lo, hi, 3)) {
-      const y = py(t).toFixed(1);
+    /* Ticks are chosen over the range as it is read, so they land on round
+       feet rather than on round metres relabelled. Each is converted back to
+       metres to be placed, since py works in what was measured. */
+    const un = C.unitsFor(state.units);
+    for (const t of C.axisTicks(C.toElevation(lo, state.units), C.toElevation(hi, state.units), 3)) {
+      const y = py(t * un.perElevation).toFixed(1);
       p.push(`<line style="${gridS};opacity:.75" x1="${PAD_L}" y1="${y}" x2="${right}" y2="${y}"/>`);
       p.push(`<text style="${axisS}" x="${PAD_L - 7}" y="${y}" dy="3.4" text-anchor="end">${Math.round(t)}</text>`);
     }
     /* Ask for as many distance ticks as the plot has room to letter, not a
        fixed eight — at a phone width eight of them collide. */
     const plotW = right - PAD_L;
-    for (const t of C.axisTicks(0, total / 1000, Math.max(3, Math.min(8, Math.round(plotW / 70))))) {
-      if (t <= 0 || t * 1000 > total) continue;
-      const xv = px(t * 1000);
+    for (const t of C.axisTicks(0, C.toDistance(total, state.units), Math.max(3, Math.min(8, Math.round(plotW / 70))))) {
+      if (t <= 0 || t * un.perDistance > total) continue;
+      const xv = px(t * un.perDistance);
       const x = xv.toFixed(1);
       p.push(`<line style="${gridS};opacity:.5" x1="${x}" y1="${PAD_T}" x2="${x}" y2="${baseY}"/>`);
       /* the KM legend owns the right end of the axis; a label under it reads
@@ -2776,8 +2821,8 @@ globalThis.MapToGPX = (function () {
     p.push(`<line style="${gridS}" x1="${PAD_L}" y1="${baseY}" x2="${right}" y2="${baseY}"/>`);
     p.push(`<path fill="${acc}" fill-opacity=".14" d="${area}"/>`);
     p.push(`<path style="fill:none;stroke:${acc};stroke-width:2.6;stroke-linejoin:round" d="${d}"/>`);
-    p.push(`<text style="${axisS};opacity:.8" x="${PAD_L - 7}" y="${PAD_T - 3}" text-anchor="end">M</text>`);
-    p.push(`<text style="${axisS};opacity:.8" x="${right}" y="${H - 8}" text-anchor="end">KM</text>`);
+    p.push(`<text style="${axisS};opacity:.8" x="${PAD_L - 7}" y="${PAD_T - 3}" text-anchor="end">${un.elevation.toUpperCase()}</text>`);
+    p.push(`<text style="${axisS};opacity:.8" x="${right}" y="${H - 8}" text-anchor="end">${un.distance.toUpperCase()}</text>`);
     p.push(`<line id="mtg-cursor" style="stroke:${ink3};stroke-width:1;stroke-dasharray:3 3;display:none" x1="0" y1="${PAD_T}" x2="0" y2="${baseY}"/>`);
     p.push(`<circle id="mtg-dot" style="fill:${acc};stroke:${surf};stroke-width:2;display:none" r="4.5" cx="0" cy="0"/>`);
     svg.innerHTML = p.join('');
@@ -2810,7 +2855,9 @@ globalThis.MapToGPX = (function () {
     const a = Math.max(0, i - 1), b = Math.min(series.xs.length - 1, i + 1);
     const run = series.xs[b] - series.xs[a];
     const slope = run > 1 ? ((series.ys[b] - series.ys[a]) / run) * 100 : 0;
-    $('readout').textContent = (series.xs[i] / 1000).toFixed(1) + ' km · ' + Math.round(series.ys[i]) + ' m · ' +
+    const u = C.unitsFor(state.units);
+    $('readout').textContent = C.toDistance(series.xs[i], state.units).toFixed(1) + ' ' + u.distance + ' · ' +
+      Math.round(C.toElevation(series.ys[i], state.units)).toLocaleString() + ' ' + u.elevation + ' · ' +
       (slope >= 0 ? '+' : '') + slope.toFixed(1) + '%';
 
     /* mirror the cursor onto the map, so profile and line read together */
@@ -3064,7 +3111,12 @@ globalThis.MapToGPX = (function () {
 
   /* ── render ─────────────────────────────────────────────────────────── */
 
-  const fmtKm = (m) => (m / 1000).toFixed(m < 10000 ? 2 : 1);
+  /* Distances read to two decimals while they are small enough for the second
+     one to mean anything, which is a fact about the number on screen rather
+     than about metres -- so the threshold is applied after converting. */
+  const U = () => C.unitsFor(state.units);
+  const fmtDist = (m) => { const v = C.toDistance(m, state.units); return v.toFixed(v < 10 ? 2 : 1); };
+  const fmtEle = (m) => Math.round(C.toElevation(m, state.units)).toLocaleString();
   function fmtDuration(seconds) {
     const mins = Math.round((seconds || 0) / 60);
     const h = Math.floor(mins / 60), m = mins % 60;
@@ -3265,23 +3317,26 @@ globalThis.MapToGPX = (function () {
       const activity = (PROFILES.find((p) => p.id === s.profile) || {}).name || s.profile;
       $('r-sub').textContent = r.points.length.toLocaleString() + ' pts · ' +
         waypoints.length + ' stops · ' + activity.toLowerCase();
-      $('r-dist').textContent = fmtKm(r.distance);
+      $('units').querySelectorAll('.unit').forEach(
+        (b) => b.setAttribute('aria-checked', String(b.dataset.units === s.units)));
+      $('r-dist').textContent = fmtDist(r.distance);
       $('r-time').textContent = r.duration ? fmtDuration(r.duration) : '—';
       /* The assumptions are not obvious from a single figure, so they live
          where a curious reader will look for them. */
       $('r-time').title = r.duration
         ? 'Moving time for an average ' + (PACE_LABEL[paceFor(s.profile)] || 'person') + ', allowing for the gradient — ' +
-          (r.distance / 1000 / (r.duration / 3600)).toFixed(1) + ' km/h overall. Excludes stops.' +
+          (C.toDistance(r.distance, s.units) / (r.duration / 3600)).toFixed(1) + ' ' + U().speed +
+          ' overall. Excludes stops.' +
           (r.orsDuration ? ' OpenRouteService says ' + fmtDuration(r.orsDuration) + ', which ignores climbing.' : '')
         : '';
       $('r-asc').innerHTML = '';
-      $('r-asc').append(document.createTextNode(r.ascent == null ? '—' : r.ascent.toLocaleString()), el('u', null, 'm'));
+      $('r-asc').append(document.createTextNode(r.ascent == null ? '—' : fmtEle(r.ascent)), el('u', null, U().elevation));
       $('r-desc').innerHTML = '';
-      $('r-desc').append(document.createTextNode(r.descent == null ? '—' : r.descent.toLocaleString()), el('u', null, 'm'));
+      $('r-desc').append(document.createTextNode(r.descent == null ? '—' : fmtEle(r.descent)), el('u', null, U().elevation));
       $('r-peak').innerHTML = '';
       $('r-peak').append(
-        document.createTextNode(r.stats.max == null ? '—' : r.stats.max.toLocaleString() + ' / ' + r.stats.min.toLocaleString()),
-        el('u', null, 'm'));
+        document.createTextNode(r.stats.max == null ? '—' : fmtEle(r.stats.max) + ' / ' + fmtEle(r.stats.min)),
+        el('u', null, U().elevation));
       $('r-grade').innerHTML = '';
       /* U+2212 MINUS, not a hyphen: it lines up with the digits in tabular figures */
       $('r-grade').textContent = r.stats.max == null ? '—'
@@ -3332,8 +3387,11 @@ globalThis.MapToGPX = (function () {
           b.setAttribute('aria-checked', String(on));
           /* Nothing to switch to when it is the only one. */
           b.disabled = s.busy || !many;
-          const bits = [fmtKm(o.distance) + ' km'];
-          if (o.ascent != null) bits.push('↑ ' + Math.round(o.ascent) + ' m');
+          const bits = [fmtDist(o.distance) + ' ' + U().distance];
+          /* Rounded to the metre before converting, because the headline figure
+             was rounded there too -- convert the raw float here and the same climb
+             reads 1,748 ft in one place and 1,749 ft in the other. */
+          if (o.ascent != null) bits.push('↑ ' + fmtEle(Math.round(o.ascent)) + ' ' + U().elevation);
           if (!o.ready) bits.push('road distance — tap to build it');
           const mid = el('span', 'mid');
           mid.append(el('span', 'lab', o.label || (many ? 'Option ' + (i + 1) : 'This route')),
@@ -3444,6 +3502,19 @@ globalThis.MapToGPX = (function () {
     $('link').focus();
   });
   $('btn-convert').addEventListener('click', convert);
+  $('units').addEventListener('click', (e) => {
+    const b = e.target.closest('.unit');
+    if (b) setUnits(b.dataset.units);
+  });
+  /* Two radios in a group: an arrow key in any direction means the other one. */
+  $('units').addEventListener('keydown', (e) => {
+    if (!/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
+    e.preventDefault();
+    const next = state.units === 'metric' ? 'imperial' : 'metric';
+    setUnits(next);
+    const b = $('units').querySelector('.unit[data-units="' + next + '"]');
+    if (b) b.focus();
+  });
   $('btn-find-alt').addEventListener('click', () => { if (!state.busy) findWaysRound(routeGen); });
   $('btn-download').addEventListener('click', download);
   $('btn-copy').addEventListener('click', copyGpx);
@@ -3537,7 +3608,32 @@ globalThis.MapToGPX = (function () {
     $('tipjar').hidden = false;
   }
 
+  /* ── units ──────────────────────────────────────────────────────────── */
+
+  /* Remembered, because nobody changes which units they think in between one
+     route and the next, and being asked again every visit is the whole of the
+     annoyance. A blocked or absent store just means starting from the locale
+     again, which is not worth an error. */
+  const UNITS_KEY = 'maptogpx:units';
+
+  function loadUnits() {
+    try {
+      const saved = localStorage.getItem(UNITS_KEY);
+      if (saved === 'metric' || saved === 'imperial') return saved;
+    } catch (_) { /* private windows and blocked site data both land here */ }
+    return C.defaultUnits(navigator.language);
+  }
+
+  function setUnits(name) {
+    if (state.units === name || !C.UNITS[name]) return;
+    state.units = name;
+    try { localStorage.setItem(UNITS_KEY, name); } catch (_) { }
+    render();
+  }
+
   /* ── boot ───────────────────────────────────────────────────────────── */
+
+  state.units = loadUnits();
 
   /* A key from config.local.js means nothing to ask for — the field stays in
      Settings for overriding, but the interface never shows the credential. */

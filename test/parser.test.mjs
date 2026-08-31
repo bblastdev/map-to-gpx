@@ -695,6 +695,56 @@ test('corridorPinCount holds an alternative to its corridor without over-pinning
   assert.equal(C.corridorPinCount(undefined), 3);
 });
 
+test('unit conversion is exact, and never touches the GPX', () => {
+  /* a mile is 1609.344 m and a foot 0.3048 m, both by definition */
+  assert.equal(C.toDistance(1609.344, 'imperial'), 1);
+  assert.equal(C.toElevation(0.3048, 'imperial'), 1);
+  assert.equal(C.toDistance(1000, 'metric'), 1);
+  assert.equal(C.toElevation(1, 'metric'), 1);
+
+  /* a marathon, to a tenth: 42.195 km is 26.2 miles */
+  assert.equal(C.toDistance(42195, 'imperial').toFixed(1), '26.2');
+  /* Alpe d'Huez, 1071 m of climbing, is 3514 ft */
+  assert.equal(Math.round(C.toElevation(1071, 'imperial')), 3514);
+
+  /* an unknown or missing system reads as metric rather than throwing */
+  assert.equal(C.toDistance(1000, 'furlongs'), 1);
+  assert.equal(C.toDistance(1000, undefined), 1);
+  assert.equal(C.unitsFor('nonsense').distance, 'km');
+  assert.equal(C.toDistance(null, 'metric'), 0);
+  assert.equal(C.toElevation(undefined, 'imperial'), 0);
+
+  /* the round trip loses nothing that a display would show */
+  const back = C.toDistance(31415.9, 'imperial') * C.UNITS.imperial.perDistance;
+  assert.ok(Math.abs(back - 31415.9) < 1e-9, `got ${back}`);
+
+  /* the file is metric whatever is on screen -- GPX specifies metres */
+  const pts = [{ lat: 0, lon: 0, ele: 100 }, { lat: 0.01, lon: 0, ele: 200 }];
+  const gpx = C.buildGpx({ points: pts, name: 'x', profile: 'cycling-road', waypoints: [] });
+  assert.ok(gpx.includes('<ele>100.0</ele>'), 'elevation stays in metres');
+  assert.ok(!/mi<|ft</.test(gpx), 'no imperial unit leaks into the file');
+});
+
+test('defaultUnits follows the region, not the language', () => {
+  /* miles are the road unit in the US and the UK */
+  assert.equal(C.defaultUnits('en-US'), 'imperial');
+  assert.equal(C.defaultUnits('en-GB'), 'imperial');
+  assert.equal(C.defaultUnits('cy-GB'), 'imperial');      // Welsh, still UK roads
+  assert.equal(C.defaultUnits('en-US-POSIX'), 'imperial');
+
+  /* and nowhere else, including English-speaking countries that went metric */
+  assert.equal(C.defaultUnits('en-AU'), 'metric');
+  assert.equal(C.defaultUnits('en-IE'), 'metric');
+  assert.equal(C.defaultUnits('id-ID'), 'metric');
+  assert.equal(C.defaultUnits('de'), 'metric');
+  assert.equal(C.defaultUnits('en'), 'metric');
+  assert.equal(C.defaultUnits(''), 'metric');
+  assert.equal(C.defaultUnits(undefined), 'metric');
+
+  /* a language that happens to spell like a region must not trip it */
+  assert.equal(C.defaultUnits('us'), 'metric');
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);
