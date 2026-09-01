@@ -35,7 +35,7 @@
     --panel2:#141414; --panelline:#2a2a26;
     /* The colour-blocked accents, named so the blocks that use them read as
        intent rather than as hex. */
-    --acid:#e9f53b; --navy:#0e2a47; --olive:#4a5320; --paper:#f2f1ea; --black:#0b0b0b;
+    --acid:#e9f53b; --acid2:rgba(11,11,11,.11); --navy:#0e2a47; --olive:#4a5320; --paper:#f2f1ea; --black:#0b0b0b;
     --font:Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
@@ -270,9 +270,16 @@
   .hero .big { display: flex; align-items: flex-end; justify-content: space-between; gap: 9.8px; margin-top: 16.4px; }
   .hero .big span { font: 300 clamp(62px, 17vw, 108px)/.82 var(--font); letter-spacing: -.055em; }
   .hero .big u { font: 700 10.7px/1 var(--font); letter-spacing: .16em; text-transform: uppercase; padding-bottom: 8.2px; }
+  /* Two flat cells 2px apart, the same shape as the profile switch: a sunk
+     block for the one not chosen, the block inverted for the one that is. The
+     border reset is not decoration -- without it the browser draws its own
+     bevel, which is the one thing this design has none of anywhere. */
   .hero .units { display: flex; gap: 2px; margin-bottom: 4.9px; flex: none; }
-  .hero .unit { font: 700 10.7px/1 var(--font); letter-spacing: .16em; text-transform: uppercase;
-    padding: 6.6px 7.4px; background: transparent; color: var(--black); opacity: .5; cursor: pointer; }
+  .hero .unit {
+    border: 0; border-radius: 0; appearance: none; -webkit-appearance: none;
+    padding: 6.6px 7.4px; cursor: pointer; background: var(--acid2); color: var(--black);
+    font: 700 10.7px/1 var(--font); letter-spacing: .16em; text-transform: uppercase; opacity: .55;
+  }
   .hero .unit[aria-checked="true"] { background: var(--black); color: var(--acid); opacity: 1; }
   .hero .unit:focus-visible { outline: 2px solid var(--black); outline-offset: 2px; }
 
