@@ -390,14 +390,6 @@
     font: 800 clamp(16.4px, 5.4vw, 22px)/1 var(--font); letter-spacing: -.015em; text-transform: uppercase; cursor: pointer;
   }
   .dl .ic { letter-spacing: 0; }
-  /* The second ending, directly under the first. Handing the file to another
-     app is the shorter road on a phone, but Download is what the page promises
-     and keeps the weight, so this sits below it at the weight of the row after. */
-  .dl.quiet {
-    min-height: 42px; margin-top: 2px; justify-content: center; gap: 7.4px;
-    background: var(--surf2); color: var(--ink);
-    font: 700 9.8px/1 var(--font); letter-spacing: .13em;
-  }
   .pair { display: flex; gap: 2px; margin-top: 2px; }
   .pair button { display: flex; align-items: center; justify-content: center; gap: 7.4px; flex: 1; min-height: 42px; border: 0; background: var(--surf2); color: var(--ink); font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer; }
   .pair button .ic { letter-spacing: 0; }
@@ -668,10 +660,9 @@
             <span class="file" id="gpx-file"></span>
           </div>
           <button class="dl" id="btn-download"><span>Download GPX</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-download-simple"/></svg></button>
-          <button class="dl quiet" id="btn-send" hidden><span id="send-label">Send to App</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-share-network"/></svg></button>
           <div class="pair">
             <button id="btn-copy"><svg class="ic ic-e" aria-hidden="true"><use href="#b-copy" id="copy-icon"/></svg><span id="copy-label">Copy GPX</span></button>
-            <button id="btn-share"><svg class="ic ic-e" aria-hidden="true"><use href="#b-link-simple" id="share-icon"/></svg><span id="share-label">Share link</span></button>
+            <button id="btn-share"><svg class="ic ic-e" aria-hidden="true"><use href="#b-share-network" id="share-icon"/></svg><span id="share-label">Share link</span></button>
           </div>
           <!-- Someone who just got the file they came for is the only person
                with any reason to want this. It is a sentence, not a button. -->
@@ -2446,7 +2437,7 @@ globalThis.MapToGPX = (function () {
     link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
-    copyLabel: 'Copy GPX', shareLabel: 'Share link', sendLabel: 'Send to App',
+    copyLabel: 'Copy GPX', shareLabel: 'Share link',
     units: 'metric'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
@@ -3135,47 +3126,6 @@ globalThis.MapToGPX = (function () {
     setTimeout(() => { state.copyLabel = 'Copy GPX'; render(); }, 1800);
   }
 
-  /**
-   * Handing the file to another app beats writing it to disk: on a phone a
-   * download lands in Files and the rider then goes hunting for it, where the
-   * share sheet offers Garmin Connect, Komoot and Wahoo directly.
-   *
-   * Which file types may be shared is the browser's decision, not ours, and
-   * Chrome's list is far shorter than Safari's. So rather than assume
-   * application/gpx+xml is allowed, ask about each candidate and keep the
-   * first that is accepted; the name still ends in .gpx either way, which is
-   * what the receiving app actually matches on.
-   */
-  const SEND_TYPES = ['application/gpx+xml', 'application/xml', 'text/xml', 'application/octet-stream'];
-  let sendType = null;
-
-  function pickSendType() {
-    if (typeof navigator.canShare !== 'function' || typeof File !== 'function') return null;
-    for (const t of SEND_TYPES) {
-      try {
-        if (navigator.canShare({ files: [new File(['<gpx/>'], 'route.gpx', { type: t })] })) return t;
-      } catch (_) { /* some browsers throw here instead of answering false */ }
-    }
-    return null;
-  }
-
-  async function sendGpx() {
-    const r = state.result;
-    if (!r || !sendType) return;
-    try {
-      /* Files alone. Adding url or text makes some targets take that and drop
-         the attachment, which is the one thing this button is for. */
-      await navigator.share({ files: [new File([r.gpx], r.filename, { type: sendType })], title: r.name });
-    } catch (err) {
-      /* Dismissing the sheet is a decision, not a failure, and must not be
-         reported as one. */
-      if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
-      state.sendLabel = 'Could not send';
-      render();
-      setTimeout(() => { state.sendLabel = 'Send to App'; render(); }, 1800);
-    }
-  }
-
   async function shareRoute() {
     if (!waypoints.length) return;
     const url = shareUrl();
@@ -3540,7 +3490,6 @@ globalThis.MapToGPX = (function () {
       $('gpx-file').textContent = r.filename;
       $('copy-label').textContent = s.copyLabel;
       $('share-label').textContent = s.shareLabel;
-      $('send-label').textContent = s.sendLabel;
       setIcon('copy-icon', /copied/i.test(s.copyLabel) ? ICON.copied : ICON.copy);
       setIcon('share-icon', /copied/i.test(s.shareLabel) ? ICON.copied : ICON.share);
     }
@@ -3595,7 +3544,6 @@ globalThis.MapToGPX = (function () {
   });
   $('btn-find-alt').addEventListener('click', () => { if (!state.busy) findWaysRound(routeGen); });
   $('btn-download').addEventListener('click', download);
-  $('btn-send').addEventListener('click', sendGpx);
   $('btn-copy').addEventListener('click', copyGpx);
   $('btn-share').addEventListener('click', shareRoute);
   $('btn-add').addEventListener('click', () => { state.addMode = !state.addMode; render(); });
@@ -3713,12 +3661,6 @@ globalThis.MapToGPX = (function () {
   /* ── boot ───────────────────────────────────────────────────────────── */
 
   state.units = loadUnits();
-
-  /* Asked once, at boot: the answer cannot change while the page is open, and
-     a browser that cannot hand over a file never sees the button at all rather
-     than being offered one that fails. */
-  sendType = pickSendType();
-  if (sendType) $('btn-send').hidden = false;
 
   /* A key from config.local.js means nothing to ask for — the field stays in
      Settings for overriding, but the interface never shows the credential. */
