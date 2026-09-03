@@ -390,9 +390,9 @@
     font: 800 clamp(16.4px, 5.4vw, 22px)/1 var(--font); letter-spacing: -.015em; text-transform: uppercase; cursor: pointer;
   }
   .dl .ic { letter-spacing: 0; }
-  /* Where the file can be handed straight to another app, that is the better
-     ending and takes the loud button. Download keeps its place directly under,
-     quietened to the weight of the row below it. */
+  /* The second ending, directly under the first. Handing the file to another
+     app is the shorter road on a phone, but Download is what the page promises
+     and keeps the weight, so this sits below it at the weight of the row after. */
   .dl.quiet {
     min-height: 42px; margin-top: 2px; justify-content: center; gap: 7.4px;
     background: var(--surf2); color: var(--ink);
@@ -667,8 +667,8 @@
             <span class="badge" id="gpx-badge"></span>
             <span class="file" id="gpx-file"></span>
           </div>
-          <button class="dl" id="btn-send" hidden><span id="send-label">Send GPX</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-share-network"/></svg></button>
           <button class="dl" id="btn-download"><span>Download GPX</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-download-simple"/></svg></button>
+          <button class="dl quiet" id="btn-send" hidden><span id="send-label">Send to App</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-share-network"/></svg></button>
           <div class="pair">
             <button id="btn-copy"><svg class="ic ic-e" aria-hidden="true"><use href="#b-copy" id="copy-icon"/></svg><span id="copy-label">Copy GPX</span></button>
             <button id="btn-share"><svg class="ic ic-e" aria-hidden="true"><use href="#b-link-simple" id="share-icon"/></svg><span id="share-label">Share link</span></button>
@@ -2446,7 +2446,7 @@ globalThis.MapToGPX = (function () {
     link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
-    copyLabel: 'Copy GPX', shareLabel: 'Share link', sendLabel: 'Send GPX',
+    copyLabel: 'Copy GPX', shareLabel: 'Share link', sendLabel: 'Send to App',
     units: 'metric'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
@@ -3172,7 +3172,7 @@ globalThis.MapToGPX = (function () {
       if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
       state.sendLabel = 'Could not send';
       render();
-      setTimeout(() => { state.sendLabel = 'Send GPX'; render(); }, 1800);
+      setTimeout(() => { state.sendLabel = 'Send to App'; render(); }, 1800);
     }
   }
 
@@ -3718,10 +3718,7 @@ globalThis.MapToGPX = (function () {
      a browser that cannot hand over a file never sees the button at all rather
      than being offered one that fails. */
   sendType = pickSendType();
-  if (sendType) {
-    $('btn-send').hidden = false;
-    $('btn-download').classList.add('quiet');
-  }
+  if (sendType) $('btn-send').hidden = false;
 
   /* A key from config.local.js means nothing to ask for — the field stays in
      Settings for overriding, but the interface never shows the credential. */
