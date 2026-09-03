@@ -745,6 +745,18 @@ test('defaultUnits follows the region, not the language', () => {
   assert.equal(C.defaultUnits('us'), 'metric');
 });
 
+test('a file with no creator given still says where it came from', () => {
+  /* This string is the only attribution inside the artefact the app exists to
+     produce -- it is what someone sees in Garmin Connect or a text editor long
+     after they have forgotten which site made the file. It pointed at a bare
+     https://github.com/ for the whole of the app's life before the domain. */
+  const gpx = C.buildGpx({ points: SAMPLE, name: 'x' });
+  const creator = /\bcreator="([^"]*)"/.exec(gpx)[1];
+  assert.match(creator, /^Map to GPX/);
+  assert.match(creator, /https:\/\/map-to-gpx\.com/);
+  assert.ok(!/github\.com\/?"/.test(gpx), 'the dangling github link is gone');
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);

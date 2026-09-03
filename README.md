@@ -354,7 +354,7 @@ GPX 1.1, one `<trk>` with one `<trkseg>`, `<ele>` on every point when elevation 
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Map to GPX (openrouteservice + OpenStreetMap)"
+<gpx version="1.1" creator="Map to GPX — https://map-to-gpx.com"
      xmlns="http://www.topografix.com/GPX/1/1"
      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
      xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
