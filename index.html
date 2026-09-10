@@ -390,6 +390,13 @@
     font: 800 clamp(16.4px, 5.4vw, 22px)/1 var(--font); letter-spacing: -.015em; text-transform: uppercase; cursor: pointer;
   }
   .dl .ic { letter-spacing: 0; }
+  .targets { display: flex; flex-wrap: wrap; gap: 2px; }
+  .targets button {
+    flex: 1 1 0; min-width: 64px; min-height: 46px; border: 0; cursor: pointer;
+    background: var(--surf2); color: var(--ink);
+    font: 700 11.5px/1 var(--font); letter-spacing: .1em; text-transform: uppercase;
+  }
+  .targets button:disabled { opacity: .45; cursor: default; }
   .pair { display: flex; gap: 2px; margin-top: 2px; }
   .pair button { display: flex; align-items: center; justify-content: center; gap: 7.4px; flex: 1; min-height: 42px; border: 0; background: var(--surf2); color: var(--ink); font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer; }
   .pair button .ic { letter-spacing: 0; }
@@ -640,6 +647,16 @@
           </button>
         </div>
 
+        <!-- Asking for a distance rather than a destination. The route the link
+             described stays; this adds a longer way of riding the same two ends. -->
+        <div class="card" id="card-longer" hidden>
+          <div class="row-between" style="margin-bottom:11.5px">
+            <div class="eyebrow"><svg class="ic ic-a" aria-hidden="true"><use href="#b-arrow-counter-clockwise"/></svg>Make it longer</div>
+          </div>
+          <div class="targets" id="targets"></div>
+          <div class="optnote" id="longer-note"></div>
+        </div>
+
         <div class="card">
           <div class="row-between" style="margin-bottom:11.5px">
             <div class="eyebrow"><svg class="ic ic-a" aria-hidden="true"><use href="#b-map-pin-area"/></svg>Stops</div>
@@ -812,8 +829,12 @@ globalThis.MapToGPX = (function () {
     return { lat, lon };
   }
 
+  /* Mean Earth radius, shared so a distance measured one way and a point
+     projected the other cannot disagree about the size of the planet. */
+  const EARTH_R = 6371008.8;
+
   function haversine(a, b) {
-    const R = 6371008.8, rad = Math.PI / 180;
+    const R = EARTH_R, rad = Math.PI / 180;
     const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
     const s = Math.sin(dLat / 2) ** 2 +
               Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
@@ -1173,6 +1194,64 @@ globalThis.MapToGPX = (function () {
   function corridorPinCount(distanceM, spacingM) {
     if (!(distanceM > 0)) return 3;
     return Math.max(3, Math.min(14, Math.round(distanceM / (spacingM || 1200))));
+  }
+
+  /** Initial bearing from a to b, in radians. */
+  function bearingTo(a, b) {
+    const r = Math.PI / 180;
+    const dLon = (b.lon - a.lon) * r, la1 = a.lat * r, la2 = b.lat * r;
+    return Math.atan2(Math.sin(dLon) * Math.cos(la2),
+      Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLon));
+  }
+
+  /** The point `distance` metres from p along `bearing` radians. */
+  function destination(p, bearing, distance) {
+    const r = Math.PI / 180, d = distance / EARTH_R;
+    const la1 = p.lat * r, lo1 = p.lon * r;
+    const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(bearing));
+    const lo2 = lo1 + Math.atan2(Math.sin(bearing) * Math.sin(d) * Math.cos(la1),
+      Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+    return { lat: la2 / r, lon: lo2 / r };
+  }
+
+  /**
+   * A point to detour through so that the straight-line trip a -> point -> b
+   * measures `sum` metres.
+   *
+   * Every such point lies on an ellipse with a and b as its foci, so this takes
+   * the one straight out to the side of the midpoint: the smallest deviation
+   * that still buys the distance, which keeps the detour a bulge rather than a
+   * spike. `side` is +1 or -1 for which side of the line to bulge towards --
+   * one of them is usually water, a mountain or nothing at all, so both are
+   * worth trying.
+   */
+  function detourPoint(a, b, sum, side) {
+    const apart = haversine(a, b);
+    const half = apart / 2;
+    /* An ellipse needs its foci inside it: a sum no longer than the straight
+       line describes no detour at all. */
+    const semiMajor = Math.max(sum / 2, half * 1.02);
+    const offset = Math.sqrt(Math.max(semiMajor * semiMajor - half * half, 1));
+    const brg = bearingTo(a, b);
+    const mid = destination(a, brg, half);
+    return destination(mid, brg + (side < 0 ? -1 : 1) * Math.PI / 2, offset);
+  }
+
+  /**
+   * Round distances worth offering for a route that is `directM` long, in the
+   * units on screen. Nothing shorter than the route itself, and nothing beyond
+   * four times it -- one detour point can only buy so much before the shape
+   * stops looking like a route and starts looking like a spike.
+   */
+  function distanceTargets(directM, units) {
+    const u = unitsFor(units);
+    const ladder = u.distance === 'mi' ? [3, 5, 10, 13.1, 15, 20, 26.2, 31]
+                                       : [5, 10, 15, 20, 25, 30, 42.2, 50];
+    if (!(directM > 0)) return [];
+    return ladder
+      .map((v) => v * u.perDistance)
+      .filter((m) => m > directM * 1.15 && m <= directM * 4)
+      .slice(0, 4);
   }
 
   /** Shortest distance from a point to any vertex of a track. */
@@ -1576,6 +1655,7 @@ globalThis.MapToGPX = (function () {
     isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseGeocodeParam, parseLatLng, decodeSegment,
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
+    bearingTo, destination, detourPoint, distanceTargets,
     niceStep, axisTicks, gradeStats, estimateDuration, PACE_MODELS,
     UNITS, unitsFor, toDistance, toElevation, defaultUnits,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
@@ -2209,6 +2289,53 @@ globalThis.MapToGPX = (function () {
           `it. The line is OpenRouteService's own, so expect small differences from Google.`;
       option.ready = true;
       return option;
+    },
+
+    /**
+     * A route from the first stop to the last that measures about `targetM`,
+     * found by detouring through one computed point.
+     *
+     * The point comes off an ellipse with the two stops as its foci, so the
+     * straight-line trip through it is exactly as long as asked for. Roads are
+     * always longer than the line they follow, so the first guess is scaled by
+     * the ratio this route already proved, then corrected against what actually
+     * came back. Two or three requests is normal; each iteration tries both
+     * sides of the line because one of them is often sea, a mountain, or
+     * nothing at all.
+     */
+    async stretchToDistance(profile, plan, targetM, directM, onProgress) {
+      this.legSplitNotes = []; this.legSplitPoints = [];
+      const a = plan.waypoints[0], b = plan.waypoints[plan.waypoints.length - 1];
+      const apart = C.haversine(a, b);
+      if (!(apart > 0) || !(directM > 0) || !(targetM > directM)) return null;
+
+      let sum = targetM / (directM / apart);
+      let best = null;
+
+      for (let i = 0; i < 4; i++) {
+        let round = null;
+        for (const side of [1, -1]) {
+          const p = C.detourPoint(a, b, sum, side);
+          const via = {
+            kind: 'coords', lat: p.lat, lon: p.lon, source: 'auto-split',
+            label: `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`
+          };
+          let built;
+          try {
+            built = await this.routeSegment(profile, [a, via, b], onProgress, 1);
+          } catch (_) {
+            continue;   /* nothing routable that way; the other side may be fine */
+          }
+          const cand = { built, via, err: Math.abs(built.distance - targetM) };
+          if (!round || cand.err < round.err) round = cand;
+        }
+        if (!round) break;
+        if (!best || round.err < best.err) best = round;
+        if (best.err / targetM <= 0.05) break;
+        /* Correct the ellipse by however much the roads overshot or fell short. */
+        sum *= targetM / round.built.distance;
+      }
+      return best;
     },
 
     async corridorChoices(profile, waypoints, limitErr, onProgress) {
@@ -3051,6 +3178,57 @@ globalThis.MapToGPX = (function () {
     render();
   }
 
+  /**
+   * Ask for a distance instead of a destination: same two ends, a longer way
+   * between them. The result joins the options list, so it is picked, drawn,
+   * downloaded and dragged exactly like any other way round.
+   */
+  async function stretchTo(targetM) {
+    if (!plan || !state.result || state.busy) return;
+    const direct = plan.options[0] && plan.options[0].distance;
+    Object.assign(state, {
+      busy: true, error: null, step: 'route',
+      progressMsg: `Looking for a ${targetLabel(targetM)} way round…`
+    });
+    render();
+    startClock();
+    let found = null;
+    try {
+      found = await engine().stretchToDistance(
+        orsFor(state.profile), plan, targetM, direct, (m) => progress(m, 'route'));
+    } catch (err) { stopClock(); return fail(err); }
+    stopClock();
+    Object.assign(state, { busy: false, step: null });
+
+    if (!found) {
+      state.error = {
+        message: `No ${targetLabel(targetM)} way round turned up between these two stops.`,
+        fix: 'The roads either side may not go far enough out. Try a different distance, ' +
+             'or add a stop where you would like it to go.'
+      };
+      return render();
+    }
+
+    const b = found.built, off = Math.abs(b.distance - targetM) / targetM;
+    const opt = {
+      id: plan.options.length, ready: true,
+      label: targetLabel(targetM),
+      points: b.points, distance: b.distance, duration: b.duration,
+      ascent: b.ascent, descent: b.descent,
+      splitPoints: [found.via],
+      note: `This is the same two stops with a detour through one point, chosen to bring the ride out ` +
+        `near ${targetLabel(targetM)} -- it came back ${fmtDist(b.distance)} ${U().distance}, ` +
+        `${off < 0.01 ? 'as close as the roads allow' : Math.round(off * 100) + '% off'}. ` +
+        `Nobody chose that point but the search, so drag the hollow marker if it goes somewhere you would rather it did not.`
+    };
+    plan.options.push(opt);
+    splitPoints = [found.via];
+    splitNotes = [opt.note];
+    commit(opt, opt.id);
+    state.selected = opt.id;
+    render();
+  }
+
   /** Turn a routed option into everything the interface shows, GPX included. */
   function commit(option, index) {
     const points = C.dedupePoints(option.points);
@@ -3144,6 +3322,13 @@ globalThis.MapToGPX = (function () {
   const U = () => C.unitsFor(state.units);
   const fmtDist = (m) => { const v = C.toDistance(m, state.units); return v.toFixed(v < 10 ? 2 : 1); };
   const fmtEle = (m) => Math.round(C.toElevation(m, state.units)).toLocaleString();
+  /* Targets come off a ladder of round numbers, so they read as the number
+     chosen -- 5 km, 13.1 mi -- not as a measurement to two decimals. */
+  const fmtTarget = (m) => {
+    const v = C.toDistance(m, state.units);
+    return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1);
+  };
+  const targetLabel = (m) => fmtTarget(m) + ' ' + U().distance;
   function fmtDuration(seconds) {
     const mins = Math.round((seconds || 0) / 60);
     const h = Math.floor(mins / 60), m = mins % 60;
@@ -3399,6 +3584,26 @@ globalThis.MapToGPX = (function () {
           return 'OpenRouteService offered no meaningfully different alternative here — it only suggests one when the detour shares less than about 60% of this route.';
         };
         $('opt-note').textContent = optNote();
+
+        /* Only a plain two-stop route has two ends to stretch between. */
+        const direct = opts.length ? opts[0].distance : 0;
+        const targets = (plan.kind === 'direct' && plan.waypoints && plan.waypoints.length === 2)
+          ? C.distanceTargets(direct, s.units) : [];
+        $('card-longer').hidden = !r || !targets.length;
+        if (targets.length) {
+          const box = $('targets');
+          box.textContent = '';
+          targets.forEach((m) => {
+            const done = opts.some((o) => o.label === targetLabel(m));
+            const b = el('button', null, targetLabel(m));
+            b.disabled = s.busy || done;
+            b.addEventListener('click', () => stretchTo(m));
+            box.appendChild(b);
+          });
+          $('longer-note').textContent = opts.length
+            ? `Same start and finish, a longer way between them. Each one costs a couple of lookups, so it is asked for rather than guessed.`
+            : '';
+        }
 
         /* The search now runs on its own after every route, so this is only a
            way to ask again when that one failed. */

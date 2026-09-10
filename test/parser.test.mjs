@@ -757,6 +757,51 @@ test('a file with no creator given still says where it came from', () => {
   assert.ok(!/github\.com\/?"/.test(gpx), 'the dangling github link is gone');
 });
 
+test('detourPoint lands on the ellipse that buys the distance asked for', () => {
+  const A = { lat: -7.4244, lon: 109.2302 }, B = { lat: -7.4100, lon: 109.2450 };
+  const apart = C.haversine(A, B);
+
+  /* the defining property: straight-line A -> p -> B is exactly the sum asked */
+  for (const mult of [1.2, 1.5, 2.5, 6]) {
+    for (const side of [1, -1]) {
+      const p = C.detourPoint(A, B, apart * mult, side);
+      const got = C.haversine(A, p) + C.haversine(p, B);
+      assert.ok(Math.abs(got - apart * mult) < 1, `wanted ${apart * mult}, got ${got}`);
+    }
+  }
+
+  /* the two sides are mirror images, so one being unroutable leaves the other */
+  const l = C.detourPoint(A, B, apart * 2, 1), r = C.detourPoint(A, B, apart * 2, -1);
+  assert.ok(C.haversine(l, r) > apart, 'the two sides should be well apart');
+
+  /* a sum no longer than the straight line describes no detour; it must still
+     return a usable point rather than NaN out of a negative square root */
+  for (const bad of [apart, apart * 0.5, 0]) {
+    const p = C.detourPoint(A, B, bad, 1);
+    assert.ok(Number.isFinite(p.lat) && Number.isFinite(p.lon), `NaN for sum ${bad}`);
+  }
+});
+
+test('distanceTargets offers round numbers the route could plausibly reach', () => {
+  /* a 3.12 km route: 5 and 10 km are reachable through one detour, 15 is not */
+  assert.deepEqual(C.distanceTargets(3120, 'metric').map((m) => m / 1000), [5, 10]);
+
+  /* nothing at or below the route's own length, and nothing beyond 4x it */
+  const t = C.distanceTargets(12900, 'metric').map((m) => m / 1000);
+  assert.ok(t.every((v) => v * 1000 > 12900 && v * 1000 <= 12900 * 4), t.join(','));
+  assert.ok(t.length <= 4, 'at most four to choose between');
+
+  /* miles get a mile ladder, not kilometres relabelled */
+  const mi = C.distanceTargets(5000, 'imperial');
+  assert.ok(mi.every((m) => Math.abs((m / 1609.344) - Math.round((m / 1609.344) * 10) / 10) < 1e-9),
+    'targets should be round in miles');
+
+  assert.deepEqual(C.distanceTargets(0, 'metric'), []);
+  assert.deepEqual(C.distanceTargets(-1, 'metric'), []);
+  /* an already-long route has nothing on the ladder left to offer */
+  assert.deepEqual(C.distanceTargets(400000, 'metric'), []);
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);
