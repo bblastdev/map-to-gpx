@@ -802,6 +802,50 @@ test('distanceTargets offers round numbers the route could plausibly reach', () 
   assert.deepEqual(C.distanceTargets(400000, 'metric'), []);
 });
 
+test('smoothElevation removes sub-cell noise without flattening real climbs', () => {
+  /* a flat road whose samples jitter 8 m every point -- finer than one
+     elevation cell, so it is noise in the model, not terrain */
+  const jitter = ladder(3000, 30, (d) => 700 + ((d / 30) % 2) * 8);
+  const rawUp = C.elevationStats(jitter).ascent;
+  const smoothUp = C.elevationStats(C.smoothElevation(jitter)).ascent;
+  assert.ok(rawUp > 300, `setup: the jitter should inflate raw ascent, got ${rawUp}`);
+  assert.ok(smoothUp < rawUp * 0.1, `smoothing left ${smoothUp} m of phantom climb from ${rawUp}`);
+
+  /* a real 8% climb over 2 km rises ~158 m and must come back within 5% */
+  const hill = ladder(2000, 30, (d) => 100 + d * 0.08);
+  const rise = C.elevationStats(hill).ascent;
+  const kept = C.elevationStats(C.smoothElevation(hill)).ascent;
+  assert.ok(Math.abs(kept - rise) / rise < 0.05, `a ${rise} m climb came back as ${kept} m`);
+
+  /* the GPX is written from the raw track, so smoothing must not mutate it */
+  const before = hill.map((p) => p.ele).join();
+  C.smoothElevation(hill);
+  assert.equal(hill.map((p) => p.ele).join(), before);
+
+  /* points with no elevation pass straight through; short tracks untouched */
+  const gappy = [{ lat: 0, lon: 0, ele: 10 }, { lat: 0, lon: 0.0003 }, { lat: 0, lon: 0.0006, ele: 12 }];
+  assert.equal(C.smoothElevation(gappy)[1].ele, undefined);
+  assert.deepEqual(C.smoothElevation([]), []);
+  assert.equal(C.smoothElevation([{ lat: 0, lon: 0, ele: 5 }])[0].ele, 5);
+});
+
+test('steepest grade reads real climbs at any spacing, and one cell step as a bump', () => {
+  /* regression: requiring the run to land in a narrow band short of the window
+     found no pair of points at all once they were further apart than the band,
+     and a steady 8% climb at 30 m spacing reported 0% */
+  for (const step of [10, 20, 30, 50, 76]) {
+    const g = C.gradeStats(C.smoothElevation(ladder(2000, step, (d) => 100 + d * 0.08)));
+    assert.ok(g.maxClimb > 7.5 && g.maxClimb < 8.5, `8% climb at ${step} m spacing read as ${g.maxClimb}%`);
+  }
+
+  /* the shape measured on a real Cianjur-Bandung leg: flat, then a 36 m step
+     inside 60 m of road, which the old 100 m window read as +49% */
+  const road = ladder(2000, 20, (d) => (d >= 1000 && d < 1060 ? 751 : 715));
+  const g = C.gradeStats(C.smoothElevation(road));
+  assert.ok(g.maxClimb < 15, `one elevation step still reads as a ${g.maxClimb}% wall`);
+  assert.ok(g.maxDescent > -15, `one elevation step still reads as a ${g.maxDescent}% drop`);
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);

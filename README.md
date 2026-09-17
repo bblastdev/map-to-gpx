@@ -171,7 +171,7 @@ response folded away under "Technical detail".
 | **Ascent / Descent** | from ORS when it reports them, otherwise computed from the track with a 2 m hysteresis threshold |
 | **Est. time** | ORS's own duration estimate for the chosen profile — a rough guide, not a plan |
 | **High / low** | highest and lowest point on the route |
-| **Steepest** | the sharpest sustained climb and descent, measured over a rolling 100 m window rather than between adjacent points, which at DEM sampling density produces meaningless percentages |
+| **Steepest** | the sharpest sustained climb and descent, measured over at least 200 m of smoothed elevation. Shorter runs read the elevation model's cell boundaries as walls — a real Cianjur–Bandung leg showed +49% before this and +15% after |
 
 The elevation profile has gridlines and labelled axes in metres and kilometres, and hovering (or
 dragging a finger across it) reads out **distance · elevation · slope** at that point. Slope is
@@ -414,10 +414,14 @@ redesign stopped using can survive unnoticed.
 
 ## Known limitations
 
-- **Elevation is DEM-derived**, not barometric. ORS reports ascent/descent from a digital
-  elevation model sampled along the route; expect it to differ from what your watch records.
-  When ORS does not return totals the app computes them from the track with a 2 m hysteresis
-  threshold, which avoids the wild over-counting a naive sum of differences produces.
+- **Elevation is DEM-derived**, not barometric — SRTM, sampled by ORS along the route — so
+  expect it to differ from what your watch records. The data comes in cells about 90 m across
+  while a route carries a point every 30–40 m, so on a hillside the samples step between cells
+  and a naive sum counts every step as climbing. The app therefore ignores ORS's own ascent
+  figure and measures its own, from elevation averaged over one cell, with a 2 m hysteresis
+  threshold. On real West Java legs that took ascent down about 30%. Variation a cell wide or
+  wider is left alone: at that scale the model cannot tell a step from a hill, and neither can
+  this. The GPX still carries the raw samples.
 - **The time is a model, not a promise.** ORS returns its own duration, but elevation-aware
   timing is disabled on its public servers — *"it can lead to undesirable routes"* — so a route
   with 300 m of climbing comes back timed as though it were flat, and `foot-*` profiles come back

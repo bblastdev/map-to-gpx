@@ -1113,6 +1113,44 @@ globalThis.MapToGPX = (function () {
    * Ascent/descent with a small hysteresis threshold so DEM noise does not
    * inflate the totals the way a naive sum of differences does.
    */
+  /**
+   * Elevation averaged over about one cell of the model it came from.
+   *
+   * Route elevation is sampled from SRTM, whose cells are roughly 90 m across,
+   * while a route carries a point every 30-40 m. So several points in a row
+   * read the same cell, then the next one reads its neighbour, and on a
+   * hillside that neighbour can sit 30-40 m higher or lower. The road did not
+   * climb 36 m in 50 m -- the data stepped. Summed over a long route those
+   * steps inflated ascent by about 30% on a real Cianjur-Bandung leg, and read
+   * as walls of +49% on the steepest-grade figure.
+   *
+   * Nothing shorter than a cell is information the model has, so averaging
+   * over one cell removes the steps without flattening any hill a road can
+   * actually have. The track written to the GPX keeps the raw samples; this is
+   * for the figures read off it.
+   */
+  function smoothElevation(points, halfMetres) {
+    const half = halfMetres > 0 ? halfMetres : 45;
+    if (!points || points.length < 3) return (points || []).slice();
+    const d = cumulativeDistances(points);
+    const out = new Array(points.length);
+    let lo = 0, hi = -1, sum = 0, n = 0;
+    for (let i = 0; i < points.length; i++) {
+      while (hi + 1 < points.length && d[hi + 1] - d[i] <= half) {
+        hi++;
+        if (isNum(points[hi].ele)) { sum += points[hi].ele; n++; }
+      }
+      while (d[i] - d[lo] > half) {
+        if (isNum(points[lo].ele)) { sum -= points[lo].ele; n--; }
+        lo++;
+      }
+      out[i] = (isNum(points[i].ele) && n > 0)
+        ? Object.assign({}, points[i], { ele: sum / n })
+        : points[i];
+    }
+    return out;
+  }
+
   function elevationStats(points, threshold) {
     const t = isNum(threshold) ? threshold : 2;
     const eles = points.map((p) => p.ele).filter(isNum);
@@ -1462,15 +1500,23 @@ globalThis.MapToGPX = (function () {
   }
 
   function gradeStats(points, windowMetres) {
-    const win = windowMetres || 100;
+    /* 200 m is about two elevation cells, so one cell boundary cannot set the
+       figure on its own. */
+    const win = windowMetres || 200;
     const dists = cumulativeDistances(points);
     let maxClimb = 0, maxDescent = 0, climbAt = null, descentAt = null;
     let j = 0;
     for (let i = 0; i < points.length; i++) {
       if (!isNum(points[i].ele)) continue;
-      while (j < i && dists[i] - dists[j] > win) j++;
+      /* Measure from the nearest point at least a full window back. Never
+         shorter than the window: accepting runs down to half of it is what let
+         a 50 m stretch span one elevation step and read as a 49% wall. And
+         never missing: requiring the run to land inside a narrow band short of
+         the window found no pair at all once points were further apart than the
+         band was wide, so a steady climb at 30 m spacing reported 0%. */
+      while (j + 1 < i && dists[i] - dists[j + 1] >= win) j++;
       const run = dists[i] - dists[j];
-      if (run < win * 0.5 || !isNum(points[j].ele)) continue;
+      if (run < win || !isNum(points[j].ele)) continue;
       const grade = ((points[i].ele - points[j].ele) / run) * 100;
       if (grade > maxClimb) { maxClimb = grade; climbAt = dists[i]; }
       if (grade < maxDescent) { maxDescent = grade; descentAt = dists[i]; }
@@ -1656,7 +1702,7 @@ globalThis.MapToGPX = (function () {
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
     bearingTo, destination, detourPoint, distanceTargets,
-    niceStep, axisTicks, gradeStats, estimateDuration, PACE_MODELS,
+    niceStep, axisTicks, gradeStats, smoothElevation, estimateDuration, PACE_MODELS,
     UNITS, unitsFor, toDistance, toElevation, defaultUnits,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
     escapeXml, buildGpx, validateGpx
@@ -2017,12 +2063,18 @@ globalThis.MapToGPX = (function () {
 
     featureToRoute(f) {
       const props = f.properties || {};
+      const points = this.featureToPoints(f);
+      /* Not ORS's own ascent: that sums the raw elevation samples, cell steps
+         and all. Measured here, from the smoothed profile, every route gets
+         the same treatment the moment it is built -- so an option in the list
+         and the headline figure can never disagree about the same climb. */
+      const climb = C.elevationStats(C.smoothElevation(points));
       return {
-        points: this.featureToPoints(f),
+        points,
         distance: (props.summary && props.summary.distance) || 0,
         duration: (props.summary && props.summary.duration) || 0,
-        ascent: Number.isFinite(props.ascent) ? props.ascent : null,
-        descent: Number.isFinite(props.descent) ? props.descent : null
+        ascent: climb.ascent,
+        descent: climb.descent
       };
     },
 
@@ -3232,12 +3284,15 @@ globalThis.MapToGPX = (function () {
   /** Turn a routed option into everything the interface shows, GPX included. */
   function commit(option, index) {
     const points = C.dedupePoints(option.points);
+    /* Every figure is read off the smoothed profile; the GPX below is written
+       from the raw one, so a device gets exactly what the elevation model said. */
+    const profileForFigures = C.smoothElevation(points);
     const name = C.routeName(waypoints);
-    const stats = C.elevationStats(points);
+    const stats = C.elevationStats(profileForFigures);
     const ascent = option.ascent != null ? Math.round(option.ascent) : stats.ascent;
     const descent = option.descent != null ? Math.round(option.descent) : stats.descent;
     const distance = option.distance || C.cumulativeDistances(points).pop();
-    const grades = C.gradeStats(points);
+    const grades = C.gradeStats(profileForFigures);
     /* The activity, not the ORS profile underneath it. Run routes on
        cycling-regular, so "foot-walking" in a filename or a GPX description
        would be describing plumbing rather than the ride. */
@@ -3259,7 +3314,7 @@ globalThis.MapToGPX = (function () {
       /* ORS's own figure, kept so the two can be compared, and ours, which is
          the one shown — see estimateDuration in the core for why. */
       orsDuration: option.duration,
-      duration: C.estimateDuration(points, paceFor(state.profile)),
+      duration: C.estimateDuration(profileForFigures, paceFor(state.profile)),
       ascent, descent, stats, grades,
       gpx, filename, valid: check.ok, errors: check.errors,
       hasElevation: points.some((p) => Number.isFinite(p.ele))
