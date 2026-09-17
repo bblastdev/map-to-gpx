@@ -1592,7 +1592,10 @@ globalThis.MapToGPX = (function () {
     const pts = dedupePoints((o.points || []).filter((p) => validLat(p.lat) && validLon(p.lon)));
     if (pts.length < 2) throw new Error('A GPX track needs at least two valid points.');
 
-    const creator = o.creator || 'Map to GPX — https://map-to-gpx.com';
+    /* The one creator string. The interface used to pass its own, so the default
+       it replaced was only ever seen by tests -- which is how a fix to this line
+       once shipped without reaching a single downloaded file. */
+    const creator = o.creator || 'Map to GPX — https://map-to-gpx.com (openrouteservice + OpenStreetMap)';
     const name = o.name || 'Route';
     const type = PROFILE_GPX_TYPE[o.profile] || null;
     const time = o.time || new Date().toISOString();
@@ -3301,8 +3304,7 @@ globalThis.MapToGPX = (function () {
     const gpx = C.buildGpx({
       points, name, profile,
       desc: `Converted from a Google Maps directions link · profile ${profile} · ` +
-            waypoints.map((w) => w.label).join(' → '),
-      creator: 'Map to GPX (openrouteservice + OpenStreetMap)'
+            waypoints.map((w) => w.label).join(' → ')
     });
     const check = C.validateGpx(gpx);
     let filename = C.buildFilename(waypoints, profile);

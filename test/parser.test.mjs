@@ -755,6 +755,10 @@ test('a file with no creator given still says where it came from', () => {
   assert.match(creator, /^Map to GPX/);
   assert.match(creator, /https:\/\/map-to-gpx\.com/);
   assert.ok(!/github\.com\/?"/.test(gpx), 'the dangling github link is gone');
+  /* and still credits the data it is built from, which the interface's own
+     string used to carry before there was only one */
+  assert.match(creator, /openrouteservice/);
+  assert.match(creator, /OpenStreetMap/);
 });
 
 test('detourPoint lands on the ellipse that buys the distance asked for', () => {
