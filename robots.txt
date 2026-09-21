@@ -1,0 +1,7 @@
+# The page is the whole site. /api/ answers POSTs from the page itself and
+# has nothing worth indexing.
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://map-to-gpx.com/sitemap.xml
