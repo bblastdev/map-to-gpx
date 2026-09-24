@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 import { cleanViewbox } from '../lib/resolve-core.js';
+import { originAllowed, APP_ORIGINS } from '../lib/route-proxy.js';
 
 /* ── load the core out of index.html ──────────────────────────────────── */
 
@@ -948,6 +949,24 @@ test('in-app browsers are recognised, and real browsers never are', () => {
   }
   assert.equal(C.inAppBrowser(''), null);
   assert.equal(C.inAppBrowser(undefined), null);
+});
+
+test('the routing proxy accepts the site and the native apps, and nothing else', () => {
+  const host = 'map-to-gpx.com', env = {};
+  assert.ok(originAllowed('https://map-to-gpx.com', host, env), 'the site itself');
+  for (const o of APP_ORIGINS) assert.ok(originAllowed(o, host, env), `the app at ${o}`);
+  assert.ok(originAllowed('capacitor://app.map-to-gpx.com', host, env), 'iOS app');
+  assert.ok(originAllowed('https://app.map-to-gpx.com', host, env), 'Android app');
+
+  /* exact matches only: no lookalikes, no other schemes, no missing Origin */
+  for (const bad of ['https://evil.example', 'https://app.map-to-gpx.com.evil.example',
+                     'https://x.app.map-to-gpx.com', 'http://app.map-to-gpx.com',
+                     'capacitor://localhost', 'https://localhost', '', undefined]) {
+    assert.equal(originAllowed(bad, host, env), false, `accepted ${JSON.stringify(bad)}`);
+  }
+
+  /* an operator can still add origins without a code change */
+  assert.ok(originAllowed('https://staging.example', host, { ALLOWED_ORIGINS: 'https://staging.example' }));
 });
 
 test('distanceToTrack measures to the nearest vertex', () => {
