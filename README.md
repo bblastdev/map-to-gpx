@@ -414,6 +414,14 @@ redesign stopped using can survive unnoticed.
 
 ## Known limitations
 
+- **Place names are looked up on OpenStreetMap, which is not Google.** When a stop in the link
+  is only a name, the app searches Nominatim for it near where the Google map was pointing (the
+  `@lat,lng,zoom` in the link), takes the match nearest that spot rather than the most famous
+  one, and refuses a match that lands implausibly far from the rest of the route. Without that,
+  a Depok route from "Gandul" to "UI Forest" came out as Seville to Amsterdam. Some names cannot
+  be found at all, because OpenStreetMap calls the place something else — "UI Forest" is
+  Google's label. The fix is always the same: drop a pin in Google Maps and re-share, so the
+  link carries coordinates and nothing has to be looked up.
 - **Elevation is DEM-derived**, not barometric — SRTM, sampled by ORS along the route — so
   expect it to differ from what your watch records. The data comes in cells about 90 m across
   while a route carries a point every 30–40 m, so on a hillside the samples step between cells

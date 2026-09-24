@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { cleanViewbox } from '../lib/resolve-core.js';
 
 /* ── load the core out of index.html ──────────────────────────────────── */
 
@@ -848,6 +849,82 @@ test('steepest grade reads real climbs at any spacing, and one cell step as a bu
   const g = C.gradeStats(C.smoothElevation(road));
   assert.ok(g.maxClimb < 15, `one elevation step still reads as a ${g.maxClimb}% wall`);
   assert.ok(g.maxDescent > -15, `one elevation step still reads as a ${g.maxDescent}% drop`);
+});
+
+/* Real Nominatim answers, as returned for the names in a bug report: a route
+   from Gandul to "UI Forest" in Depok that came out as Seville to Amsterdam. */
+const GANDUL = [
+  { lat: 37.3298, lon: -5.7896, display: 'Gandul, España' },
+  { lat: -6.3400, lon: 106.7930, display: 'Gandul, Indonesia' },         // the one in Depok
+  { lat: -7.4671, lon: 111.6535, display: 'Gandul, Indonesia' },         // Madiun
+  { lat: 18.4501, lon: -66.0796, display: 'Gandul, United States' },
+  { lat: -6.0909, lon: 105.9630, display: 'Gandul, Indonesia' }          // Serang
+];
+const UI_FOREST = [
+  { lat: 52.3578, lon: 4.8682, display: 'De Ui, Nederland' },
+  { lat: 51.9009, lon: -8.1791, display: 'Ballyannan (Bluebell) Woods, Éire / Ireland' }
+];
+const DEPOK_VIEW = { lat: -6.36, lon: 106.81, zoom: 13 };
+
+test('a name is matched to the candidate nearest the route, not the most famous one', () => {
+  const near = { lat: DEPOK_VIEW.lat, lon: DEPOK_VIEW.lon, radiusKm: C.zoomRadiusKm(DEPOK_VIEW.zoom) };
+
+  /* Nominatim's first answer for Gandul is near Seville; the route is in Depok */
+  const g = C.nearestCandidate(GANDUL, near);
+  assert.equal(g.candidate, GANDUL[1]);
+  assert.ok(g.distance < 5000, `picked Gandul ${Math.round(g.distance)} m from the map`);
+
+  /* "UI Forest" has no match near Depok at all: the nearest is still Amsterdam,
+     far past what the map could plausibly include, so it must be refused */
+  const u = C.nearestCandidate(UI_FOREST, near);
+  assert.ok(u.distance / 1000 > C.plausibleFromViewportKm(DEPOK_VIEW.zoom),
+    `Amsterdam at ${Math.round(u.distance / 1000)} km slipped under the limit`);
+
+  /* the hint Nominatim receives actually surrounds the map, in its field order */
+  const [left, top, right, bottom] = C.viewboxAround(near, near.radiusKm).split(',').map(Number);
+  assert.ok(left < near.lon && near.lon < right, 'viewbox longitude');
+  assert.ok(bottom < near.lat && near.lat < top, 'viewbox latitude');
+
+  assert.equal(C.nearestCandidate([], near), null);
+  assert.equal(C.nearestCandidate([{ lat: 'x', lon: 1 }], near), null);
+});
+
+test('the plausible distance scales with how far out the map was zoomed', () => {
+  /* a street-level map still allows a real ride out of view */
+  assert.ok(C.plausibleFromViewportKm(16) >= 150);
+  /* a map zoomed out to a whole island allows long legs */
+  assert.ok(C.plausibleFromViewportKm(6) > 1000);
+  /* and it only ever grows as the view widens */
+  for (let z = 3; z < 18; z++) {
+    assert.ok(C.plausibleFromViewportKm(z) >= C.plausibleFromViewportKm(z + 1), `zoom ${z}`);
+  }
+  assert.ok(C.zoomRadiusKm(null) > 0 && C.zoomRadiusKm(undefined) > 0);
+});
+
+test('with no map position, a named leg across a continent is refused', () => {
+  const named = (lat, lon, label) => ({ lat, lon, label, source: 'nominatim' });
+  const pinned = (lat, lon, label) => ({ lat, lon, label, source: 'coords' });
+
+  /* the bug as reported: both names resolved in Europe */
+  const odd = C.implausibleNamedLeg([named(37.3298, -5.7896, 'Gandul'), named(52.3578, 4.8682, 'UI Forest')]);
+  assert.ok(odd && odd.km > 1500, 'Seville to Amsterdam should be refused');
+  assert.equal(odd.a.label, 'Gandul');
+
+  /* the same two stops where they belong */
+  assert.equal(C.implausibleNamedLeg([named(-6.34, 106.793, 'Gandul'), named(-6.36, 106.827, 'UI')]), null);
+
+  /* a long leg between two pinned stops is the user's own, never second-guessed */
+  assert.equal(C.implausibleNamedLeg([pinned(-6.2, 106.8, 'Jakarta'), pinned(-8.65, 115.2, 'Bali')]), null);
+});
+
+test('the resolver passes on a sane viewbox and drops anything else', () => {
+  assert.equal(cleanViewbox('106.54,-6.09,107.08,-6.63'), '106.5400,-6.0900,107.0800,-6.6300');
+  assert.equal(cleanViewbox(' 1 , 2 , 3 , 4 '), '1.0000,2.0000,3.0000,4.0000');
+
+  for (const bad of [null, undefined, '', '1,2,3', '1,2,3,4,5', 'a,b,c,d',
+                     '181,0,0,0', '0,91,0,0', '0,0,0,-91', '1,2,3,4&bounded=1', 'Infinity,0,0,0']) {
+    assert.equal(cleanViewbox(bad), null, `accepted ${JSON.stringify(bad)}`);
+  }
 });
 
 test('distanceToTrack measures to the nearest vertex', () => {

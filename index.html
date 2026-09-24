@@ -1320,6 +1320,80 @@ globalThis.MapToGPX = (function () {
       .slice(0, 4);
   }
 
+  /* ── finding a named stop near its route ─────────────────────────────── */
+
+  /**
+   * About half the width Google Maps shows at a zoom level, in km.
+   *
+   * A 256 px tile spans 40 075 / 2^zoom km at the equator and a desktop map is
+   * about 4.7 tiles wide, so half of it is roughly 94 000 / 2^zoom km. Floored
+   * at 30 km, because even a street-level view belongs to a ride that leaves it.
+   */
+  function zoomRadiusKm(zoom) {
+    if (!(zoom > 0)) return 150;
+    return Math.max(30, 94000 / Math.pow(2, zoom));
+  }
+
+  /**
+   * How far from the map a stop found by name may land before it is taken to be
+   * a different place that happens to share the name. Generous -- a route can
+   * run well past the edge of the view it was shared from -- because its only
+   * job is to catch the other side of the world.
+   */
+  function plausibleFromViewportKm(zoom) {
+    return Math.max(150, 3 * zoomRadiusKm(zoom));
+  }
+
+  /** Nominatim's viewbox, "left,top,right,bottom", around a point. */
+  function viewboxAround(p, radiusKm) {
+    const dLat = radiusKm / 111.32;
+    const dLon = radiusKm / (111.32 * Math.max(0.05, Math.cos(p.lat * Math.PI / 180)));
+    const lat = (v) => Math.max(-90, Math.min(90, v));
+    const lon = (v) => Math.max(-180, Math.min(180, v));
+    return [lon(p.lon - dLon), lat(p.lat + dLat), lon(p.lon + dLon), lat(p.lat - dLat)]
+      .map((v) => v.toFixed(4)).join(',');
+  }
+
+  /**
+   * Of every place a name matched, the one nearest where the route is.
+   *
+   * Nominatim ranks by how important a place is, not by where you are, so the
+   * right answer is often not its first: "Gandul" comes back as a village near
+   * Seville first and as Gandul in Depok second.
+   */
+  function nearestCandidate(candidates, anchor) {
+    let best = null;
+    for (const c of candidates || []) {
+      if (!validLat(c.lat) || !validLon(c.lon)) continue;
+      const d = haversine(anchor, c);
+      if (!best || d < best.distance) best = { candidate: c, distance: d };
+    }
+    return best;
+  }
+
+  /*
+   * With no map position and no coordinates anywhere in a link, a name can land
+   * anywhere on Earth, so the result is checked for still describing one ride.
+   * A leg this long between stops that were only ever names is far more likely
+   * two places sharing a name than a real ride -- and routing it anyway would
+   * spend dozens of requests splitting a route across a continent.
+   */
+  const NAMED_LEG_LIMIT_KM = 1000;
+
+  /** The first leg touching a stop found by name that is implausibly long, or null. */
+  function implausibleNamedLeg(waypoints, limitKm) {
+    const limit = limitKm > 0 ? limitKm : NAMED_LEG_LIMIT_KM;
+    const ws = waypoints || [];
+    for (let i = 1; i < ws.length; i++) {
+      const a = ws[i - 1], b = ws[i];
+      if (a.source !== 'nominatim' && b.source !== 'nominatim') continue;
+      if (!validLat(a.lat) || !validLat(b.lat)) continue;
+      const km = haversine(a, b) / 1000;
+      if (km > limit) return { a, b, km };
+    }
+    return null;
+  }
+
   /** Shortest distance from a point to any vertex of a track. */
   function distanceToTrack(p, track) {
     let best = Infinity;
@@ -1733,6 +1807,8 @@ globalThis.MapToGPX = (function () {
     suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
     bearingTo, destination, detourPoint, distanceTargets,
+    zoomRadiusKm, plausibleFromViewportKm, viewboxAround, nearestCandidate,
+    NAMED_LEG_LIMIT_KM, implausibleNamedLeg,
     niceStep, axisTicks, gradeStats, smoothElevation, estimateDuration, PACE_MODELS,
     UNITS, unitsFor, toDistance, toElevation, defaultUnits,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
@@ -1840,28 +1916,33 @@ globalThis.MapToGPX = (function () {
 
     /* ── geocoding ────────────────────────────────────────────────────── */
 
-    async geocode(query) {
+    /**
+     * Every place a name matches, up to five, as [{lat, lon, display}].
+     *
+     * Given `near`, the search prefers that area -- a viewbox Nominatim leans
+     * towards but does not confine itself to -- and asks for several candidates
+     * so the caller can choose by distance. Only ever sending the name and
+     * taking the first answer is how Gandul in Depok became Gandul near Seville.
+     */
+    async geocode(query, near) {
+      const box = near ? C.viewboxAround(near, near.radiusKm) : null;
+      const extra = '&limit=5' + (box ? '&viewbox=' + encodeURIComponent(box) : '');
+      const toHit = (r) => ({ lat: parseFloat(r.lat), lon: parseFloat(r.lon), display: r.display_name || query });
       const base = this.resolverBase();
       /* Preferred path: our own function, which can send a real User-Agent —
          browsers forbid setting that header on fetch. */
       if (base) {
         try {
-          const out = await fetchJson(base + (base.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(query), null, 20000);
-          if (out.res.ok && out.json && Array.isArray(out.json.results) && out.json.results.length) {
-            const r = out.json.results[0];
-            return { lat: parseFloat(r.lat), lon: parseFloat(r.lon), display: r.display_name || query };
-          }
-          if (out.res.ok && out.json && Array.isArray(out.json.results)) return null;
+          const out = await fetchJson(base + (base.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(query) + extra, null, 20000);
+          if (out.res.ok && out.json && Array.isArray(out.json.results)) return out.json.results.map(toHit);
         } catch (_) { /* fall through to a direct call */ }
       }
       return nominatimQueue(async () => {
-        const u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=0&q=' +
-                  encodeURIComponent(query);
+        const u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&q=' +
+                  encodeURIComponent(query) + extra;
         const out = await fetchJson(u, { headers: { Accept: 'application/json' } }, 20000);
         if (!out.res.ok) throw new Error('Nominatim returned HTTP ' + out.res.status);
-        if (!Array.isArray(out.json) || !out.json.length) return null;
-        const r = out.json[0];
-        return { lat: parseFloat(r.lat), lon: parseFloat(r.lon), display: r.display_name || query };
+        return Array.isArray(out.json) ? out.json.map(toHit) : [];
       });
     },
 
@@ -1887,31 +1968,87 @@ globalThis.MapToGPX = (function () {
       return null;
     },
 
-    async resolveWaypoints(waypoints, onProgress) {
+    async resolveWaypoints(waypoints, onProgress, viewport) {
       const needing = waypoints.filter((w) => typeof w.lat !== 'number');
+      /* Where the map was when the link was shared. Every directions link from
+         Google Maps on the web carries one, and it was being parsed and then
+         dropped -- which is all that stood between Gandul in Depok and Gandul
+         near Seville. */
+      const view = (viewport && typeof viewport.lat === 'number' && typeof viewport.lon === 'number')
+        ? { lat: viewport.lat, lon: viewport.lon, radiusKm: C.zoomRadiusKm(viewport.zoom) }
+        : null;
+      const same = 'Google Maps and OpenStreetMap often call a place by different names. Open the stop in ' +
+        'Google Maps, drop a pin on it and share the link again, so the link carries its exact position.';
+      const where = (d) => {
+        const parts = String(d || '').split(',').map((x) => x.trim()).filter(Boolean);
+        return parts.length > 1 ? parts[0] + ', ' + parts[parts.length - 1] : (parts[0] || 'somewhere else');
+      };
+
       let done = 0;
-      for (const w of waypoints) {
+      for (let i = 0; i < waypoints.length; i++) {
+        const w = waypoints[i];
         if (typeof w.lat === 'number') continue;
         done++;
         onProgress(`Looking up “${w.label}” (${done}/${needing.length})…`);
-        let hit;
+        const near = view || this.knownNeighbour(waypoints, i);
+        let hits;
         try {
-          hit = await this.geocode(w.label);
+          hits = await this.geocode(w.label, near);
         } catch (err) {
           throw new C.ParseError(
             `Could not reach the geocoder while looking up “${w.label}”.`,
             'Check your connection and try again — Nominatim also rate-limits to one request per second.'
           );
         }
-        if (!hit) {
+        if (!hits || !hits.length) {
+          throw new C.ParseError(`“${w.label}” could not be found on OpenStreetMap.`, same);
+        }
+        const pick = near ? C.nearestCandidate(hits, near) : { candidate: hits[0], distance: 0 };
+        if (!pick) throw new C.ParseError(`“${w.label}” could not be found on OpenStreetMap.`, same);
+
+        /* A place with this name exists, just nowhere near the route. Better to
+           say so than to route to it: a route to Amsterdam is not a near miss. */
+        if (view && pick.distance / 1000 > C.plausibleFromViewportKm(viewport.zoom)) {
           throw new C.ParseError(
-            `“${w.label}” could not be found on OpenStreetMap.`,
-            'Open the stop in Google Maps, drop a pin on it and re-share the link so the URL carries lat,lng coordinates.'
+            `“${w.label}” is nowhere near the rest of this route. The nearest place OpenStreetMap knows by ` +
+            `that name is ${where(pick.candidate.display)}, ${Math.round(pick.distance / 1000).toLocaleString()} km away.`,
+            same
           );
         }
-        w.lat = hit.lat; w.lon = hit.lon; w.source = 'nominatim'; w.display = hit.display;
+        w.lat = pick.candidate.lat; w.lon = pick.candidate.lon;
+        w.source = 'nominatim'; w.display = pick.candidate.display;
+      }
+
+      /* With no map position to go on, check the result still describes one ride. */
+      if (!view) {
+        const odd = C.implausibleNamedLeg(waypoints, C.NAMED_LEG_LIMIT_KM);
+        if (odd) {
+          throw new C.ParseError(
+            `“${odd.a.label}” and “${odd.b.label}” came out ${Math.round(odd.km).toLocaleString()} km apart, ` +
+            `which is more likely two places that share a name than one ride.`,
+            same
+          );
+        }
       }
       return waypoints;
+    },
+
+    /**
+     * Where to look for a named stop when the link carries no map position: the
+     * nearest stop in the route, before or after it, whose location is already
+     * known. Searching near the previous stop is what keeps a chain of names on
+     * one side of the world.
+     */
+    knownNeighbour(waypoints, i) {
+      for (let d = 1; d < waypoints.length; d++) {
+        for (const j of [i - d, i + d]) {
+          const n = waypoints[j];
+          if (n && typeof n.lat === 'number' && typeof n.lon === 'number') {
+            return { lat: n.lat, lon: n.lon, radiusKm: 150 };
+          }
+        }
+      }
+      return null;
     },
 
     /* ── routing ──────────────────────────────────────────────────────── */
@@ -2535,7 +2672,7 @@ globalThis.MapToGPX = (function () {
         }
       }
       onProgress('Locating the stops…', 'locate');
-      await this.resolveWaypoints(parsed.waypoints, (m) => onProgress(m, 'locate'));
+      await this.resolveWaypoints(parsed.waypoints, (m) => onProgress(m, 'locate'), parsed.viewport);
       return parsed;
     },
 
