@@ -1504,16 +1504,6 @@ globalThis.MapToGPX = (function () {
   const toDistance = (metres, name) => (Number(metres) || 0) / unitsFor(name).perDistance;
   const toElevation = (metres, name) => (Number(metres) || 0) / unitsFor(name).perElevation;
 
-  /**
-   * Which to start in. Road distance is posted in miles in the United States
-   * and the United Kingdom and in kilometres everywhere else, so the region is
-   * the whole question — the language in front of it is not.
-   */
-  function defaultUnits(locale) {
-    const region = (/[-_]([A-Za-z]{2})(?:[-_]|$)/.exec(String(locale == null ? '' : locale)) || [])[1];
-    return /^(US|GB)$/i.test(region || '') ? 'imperial' : 'metric';
-  }
-
   /** A round-ish step (1, 2, 5 × 10ⁿ) giving roughly `targetTicks` divisions. */
   function niceStep(range, targetTicks) {
     if (!(range > 0)) return 1;
@@ -1875,7 +1865,7 @@ globalThis.MapToGPX = (function () {
     NAMED_LEG_LIMIT_KM, implausibleNamedLeg,
     inAppBrowser,
     niceStep, axisTicks, gradeStats, smoothElevation, estimateDuration, PACE_MODELS,
-    UNITS, unitsFor, toDistance, toElevation, defaultUnits,
+    UNITS, unitsFor, toDistance, toElevation,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
     escapeXml, buildGpx, validateGpx
   };
@@ -4191,7 +4181,10 @@ globalThis.MapToGPX = (function () {
       const saved = localStorage.getItem(UNITS_KEY);
       if (saved === 'metric' || saved === 'imperial') return saved;
     } catch (_) { /* private windows and blocked site data both land here */ }
-    return C.defaultUnits(navigator.language);
+    /* Kilometres until someone chooses otherwise. Guessing miles from a US or UK
+       locale put miles in front of riders in Indonesia whose phones are simply
+       set to English, and anyone who does want miles picks them once. */
+    return 'metric';
   }
 
   function setUnits(name) {

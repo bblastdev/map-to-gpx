@@ -726,26 +726,6 @@ test('unit conversion is exact, and never touches the GPX', () => {
   assert.ok(!/mi<|ft</.test(gpx), 'no imperial unit leaks into the file');
 });
 
-test('defaultUnits follows the region, not the language', () => {
-  /* miles are the road unit in the US and the UK */
-  assert.equal(C.defaultUnits('en-US'), 'imperial');
-  assert.equal(C.defaultUnits('en-GB'), 'imperial');
-  assert.equal(C.defaultUnits('cy-GB'), 'imperial');      // Welsh, still UK roads
-  assert.equal(C.defaultUnits('en-US-POSIX'), 'imperial');
-
-  /* and nowhere else, including English-speaking countries that went metric */
-  assert.equal(C.defaultUnits('en-AU'), 'metric');
-  assert.equal(C.defaultUnits('en-IE'), 'metric');
-  assert.equal(C.defaultUnits('id-ID'), 'metric');
-  assert.equal(C.defaultUnits('de'), 'metric');
-  assert.equal(C.defaultUnits('en'), 'metric');
-  assert.equal(C.defaultUnits(''), 'metric');
-  assert.equal(C.defaultUnits(undefined), 'metric');
-
-  /* a language that happens to spell like a region must not trip it */
-  assert.equal(C.defaultUnits('us'), 'metric');
-});
-
 test('a file with no creator given still says where it came from', () => {
   /* This string is the only attribution inside the artefact the app exists to
      produce -- it is what someone sees in Garmin Connect or a text editor long
