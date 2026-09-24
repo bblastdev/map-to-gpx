@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Map to GPX</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- @sprite -->
+<div class="app" id="app">
+
+  <!-- ══════════ HOME: paste · converting · error · offline ══════════ -->
+  <section class="view home" id="v-home">
+    <header class="bar">
+      <div class="brand"><svg class="ic mark" aria-hidden="true"><use href="#f-path"/></svg><b>Map to GPX</b></div>
+      <a class="support" id="support-home" hidden target="_blank" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#f-heart"/></svg><span>Support</span></a>
+    </header>
+
+    <div class="scroll">
+      <div class="offline" id="off-home" hidden>
+        <svg class="ic" aria-hidden="true"><use href="#b-link-break"/></svg>
+        <div><b>Offline</b><p>Converting needs a connection. Your last route is saved on this phone and still opens.</p></div>
+      </div>
+
+      <div class="card linkcard">
+        <div class="row">
+          <div class="eyebrow"><svg class="ic" aria-hidden="true"><use href="#b-link-simple"/></svg>Directions link</div>
+          <button class="textbtn" id="btn-example"><svg class="ic" aria-hidden="true"><use href="#b-lightning"/></svg>Example</button>
+        </div>
+        <div class="fieldwrap">
+          <input class="field" id="link" type="url" inputmode="url" enterkeyhint="go"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 placeholder="google.com/maps/dir/…" aria-label="Google Maps directions link">
+          <button class="field-x" id="btn-clear" hidden aria-label="Clear the link"><svg class="ic" aria-hidden="true"><use href="#b-x"/></svg></button>
+          <button class="field-paste" id="btn-paste" hidden>Paste</button>
+        </div>
+        <div class="hint" id="link-hint">Long or maps.app.goo.gl short links</div>
+      </div>
+
+      <div class="profiles" id="profiles-home" role="radiogroup" aria-label="Activity"></div>
+
+      <button class="cta" id="btn-convert"><span id="convert-label">Convert to GPX</span><svg class="ic" aria-hidden="true"><use href="#b-arrow-right" id="convert-icon"/></svg></button>
+
+      <div class="card busy" id="card-busy" hidden>
+        <div class="row"><div class="eyebrow">Building your route</div><div class="elapsed" id="elapsed">0s</div></div>
+        <div class="track"><i></i></div>
+        <div class="steps" id="steps"></div>
+      </div>
+
+      <div class="err" id="card-error" hidden>
+        <div class="err-head">
+          <div class="err-kind"><svg class="ic" aria-hidden="true"><use href="#f-warning-circle"/></svg><span id="err-kind">Routing problem</span></div>
+          <div class="err-msg" id="err-msg"></div>
+        </div>
+        <div class="err-body">
+          <div class="eyebrow">Try this</div>
+          <div class="fixes" id="err-fixes"></div>
+          <button class="keybtn" id="btn-err-key" hidden><svg class="ic" aria-hidden="true"><use href="#b-key"/></svg>Add your own key</button>
+          <details class="tech" id="err-tech" hidden>
+            <summary><svg class="ic" aria-hidden="true"><use href="#b-code"/></svg>Technical detail</summary>
+            <pre id="err-detail"></pre>
+          </details>
+        </div>
+      </div>
+
+      <div class="card last" id="card-last" hidden>
+        <div class="row">
+          <div class="eyebrow"><svg class="ic" aria-hidden="true"><use href="#b-path"/></svg>Last route</div>
+          <div class="eyebrow"><svg class="ic okc" aria-hidden="true"><use href="#f-check-circle"/></svg>On this phone</div>
+        </div>
+        <button class="lastbtn" id="btn-last">
+          <span class="mid"><span class="lab" id="last-name"></span><span class="facts" id="last-facts"></span></span>
+          <svg class="ic" aria-hidden="true"><use href="#b-arrow-right"/></svg>
+        </button>
+      </div>
+
+      <div class="howto" id="howto">
+        <div><span class="n">01</span><p>In Google Maps, get directions, then Share → Map to GPX</p></div>
+        <div><span class="n">02</span><p>Only the stops are read — the line is routed fresh</p></div>
+        <div><span class="n">03</span><p>Send the GPX to your watch or head unit’s app</p></div>
+      </div>
+
+      <footer class="foot">Routing <a href="https://openrouteservice.org/" target="_blank" rel="noopener">OpenRouteService</a></footer>
+      <div class="fill"></div>
+    </div>
+  </section>
+
+  <!-- ══════════ ROUTE: map + sheet ══════════ -->
+  <section class="view route" id="v-route" hidden>
+    <header class="bar">
+      <button class="back" id="btn-back" aria-label="Back"><svg class="ic flip" aria-hidden="true"><use href="#b-arrow-right"/></svg></button>
+      <div class="brand"><svg class="ic mark" aria-hidden="true"><use href="#f-path"/></svg><b>Map to GPX</b></div>
+      <a class="support" id="support-route" hidden target="_blank" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#f-heart"/></svg><span>Support</span></a>
+    </header>
+
+    <!-- the four numbers, laid out like the share card -->
+    <div class="numbers">
+      <div class="hero">
+        <div class="r-name" id="r-name"></div>
+        <div class="r-sub" id="r-sub"></div>
+        <div class="grow"></div>
+        <div class="big">
+          <span id="r-dist">—</span>
+          <div class="units" id="units" role="radiogroup" aria-label="Units">
+            <button class="unit" data-units="metric" role="radio">km</button>
+            <button class="unit" data-units="imperial" role="radio">mi</button>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="cell navy"><div class="k"><svg class="ic" aria-hidden="true"><use href="#b-trend-up"/></svg>Ascent</div><div class="v" id="r-asc">—</div></div>
+        <div class="cell navy"><div class="k"><svg class="ic" aria-hidden="true"><use href="#b-trend-down"/></svg>Descent</div><div class="v" id="r-desc">—</div></div>
+        <div class="cell dark"><div class="k">Time</div><div class="v" id="r-time">—</div></div>
+      </div>
+    </div>
+
+    <div class="stage" id="stage">
+      <div id="map"></div>
+      <div class="attr" id="attr">© OpenStreetMap © CARTO</div>
+      <div class="offbadge" id="off-route" hidden><svg class="ic" aria-hidden="true"><use href="#b-link-break"/></svg>Offline · no map tiles</div>
+      <div class="mapctl">
+        <button id="btn-add"><svg class="ic" aria-hidden="true"><use href="#b-map-pin-plus"/></svg><span id="add-label">Add a stop</span></button>
+        <button id="btn-fit"><svg class="ic" aria-hidden="true"><use href="#b-crosshair"/></svg>Fit route</button>
+      </div>
+      <div class="maphint" id="maphint" hidden>
+        <svg class="ic" aria-hidden="true"><use href="#b-map-pin-plus"/></svg>
+        <div class="k">Add a stop</div>
+        <p>Tap where it should go — it slots in by where it falls along the line.</p>
+      </div>
+      <div class="rbusy" id="rbusy" hidden><div class="track"><i></i></div><span id="rbusy-msg">Rerouting…</span><span class="elapsed" id="rbusy-elapsed"></span></div>
+      <div class="rerr" id="rerr" hidden>
+        <div class="rerr-msg" id="rerr-msg"></div>
+        <div class="rerr-fix" id="rerr-fix"></div>
+        <div class="rerr-actions">
+          <button id="btn-rerr-key" hidden><svg class="ic" aria-hidden="true"><use href="#b-key"/></svg>Add your own key</button>
+          <button id="btn-rerr-close">Dismiss</button>
+        </div>
+      </div>
+
+      <!-- the sheet: elevation first, directly under the map it mirrors -->
+      <div class="sheet" id="sheet" data-detent="half">
+        <div class="sheet-scroll" id="sheet-scroll">
+          <div class="card chartcard">
+            <div class="grab" id="grab">
+              <div class="handle"><i></i></div>
+              <div class="row">
+                <div class="eyebrow"><svg class="ic" aria-hidden="true"><use href="#b-chart-line"/></svg>Elevation profile</div>
+                <div class="readout" id="readout"></div>
+              </div>
+            </div>
+            <svg class="chart" id="chart" aria-label="Elevation profile"></svg>
+            <div class="nochart" id="nochart" hidden>No elevation data came back for this route.</div>
+          </div>
+
+          <div class="pair2">
+            <div class="cell"><div class="k">High / low</div><div class="v" id="r-peak">—</div></div>
+            <div class="cell"><div class="k">Steepest %</div><div class="v" id="r-grade">—</div></div>
+          </div>
+
+          <div class="profiles" id="profiles-route" role="radiogroup" aria-label="Activity"></div>
+
+          <div class="card">
+            <div class="eyebrow mb"><svg class="ic" aria-hidden="true"><use href="#b-shuffle"/></svg><span id="opt-count"></span></div>
+            <div class="opts" id="opts" role="radiogroup" aria-label="Ways round"></div>
+            <div class="note" id="opt-note"></div>
+            <button class="findalt" id="btn-find-alt" hidden><svg class="ic" aria-hidden="true"><use href="#b-shuffle"/></svg>Look for other ways round</button>
+          </div>
+
+          <div class="card" id="card-longer" hidden>
+            <div class="eyebrow mb"><svg class="ic" aria-hidden="true"><use href="#b-arrow-counter-clockwise"/></svg>Make it longer</div>
+            <div class="targets" id="targets"></div>
+            <div class="note">Same start and finish, a longer way between them. Each one costs a couple of lookups, so it is asked for rather than guessed.</div>
+          </div>
+
+          <div class="card">
+            <div class="row mb">
+              <div class="eyebrow"><svg class="ic" aria-hidden="true"><use href="#b-map-pin-area"/></svg>Stops</div>
+              <div class="eyebrow"><svg class="ic" aria-hidden="true"><use href="#b-hand-grabbing"/></svg>Drag pin or row</div>
+            </div>
+            <div class="stops" id="stops"></div>
+          </div>
+
+          <div class="notes" id="card-notes" hidden>
+            <div class="eyebrow" id="notes-label"></div>
+            <div class="notes-body" id="notes"></div>
+          </div>
+
+          <div class="card gpx">
+            <div class="gpxhead">
+              <svg class="ic" aria-hidden="true"><use href="#f-seal-check" id="gpx-icon"/></svg>
+              <span class="badge" id="gpx-badge">GPX 1.1 · validated</span>
+              <span class="file" id="gpx-file"></span>
+            </div>
+            <div class="pair">
+              <button id="btn-copy"><svg class="ic" aria-hidden="true"><use href="#b-copy" id="copy-icon"/></svg><span id="copy-label">Copy GPX</span></button>
+              <button id="btn-share-link"><svg class="ic" aria-hidden="true"><use href="#b-link-simple" id="share-icon"/></svg><span id="share-label">Share link</span></button>
+            </div>
+            <div class="saved" id="saved-note"><svg class="ic okc" aria-hidden="true"><use href="#f-check-circle"/></svg><span>Saved on this phone · opens offline</span></div>
+            <div class="tipjar" id="tipjar" hidden>
+              <svg class="ic" aria-hidden="true"><use href="#f-heart"/></svg>
+              <span>Free, and staying that way. If it saved you a job — <a id="tip-a" target="_blank" rel="noopener">buy me a coffee</a>, or <a id="tip-b" target="_blank" rel="noopener">tip via QRIS</a>.</span>
+            </div>
+          </div>
+
+          <footer class="foot">Routing <a href="https://openrouteservice.org/" target="_blank" rel="noopener">OpenRouteService</a></footer>
+        </div>
+      </div>
+    </div>
+
+    <!-- always in the thumb -->
+    <div class="thumb">
+      <button class="send" id="btn-send"><span>Send GPX</span><svg class="ic" aria-hidden="true"><use href="#b-share-network"/></svg></button>
+      <button class="save" id="btn-save" aria-label="Save to Files"><svg class="ic" aria-hidden="true"><use href="#b-download-simple"/></svg></button>
+    </div>
+  </section>
+
+  <!-- ══════════ SETTINGS ══════════ -->
+  <div class="settings" id="settings" hidden>
+    <div class="scrim" id="scrim"></div>
+    <div class="drawer" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="drawer-head">
+        <h2>Settings</h2>
+        <button id="btn-close-settings" aria-label="Close settings"><svg class="ic" aria-hidden="true"><use href="#b-x"/></svg></button>
+      </div>
+      <section class="card">
+        <div class="eyebrow mb"><svg class="ic" aria-hidden="true"><use href="#b-key"/></svg>OpenRouteService API key</div>
+        <input class="keyfield" id="key" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Paste your key">
+        <p class="note">Kept in this phone’s secure storage — never sent anywhere except OpenRouteService. Free key at <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">openrouteservice.org</a>. Free tier: 40 routes/minute, 2 000/day.</p>
+      </section>
+      <section class="card">
+        <div class="eyebrow mb"><svg class="ic" aria-hidden="true"><use href="#b-globe-hemisphere-west"/></svg>Routing host</div>
+        <div class="hosts" id="hosts" role="radiogroup" aria-label="Routing host"></div>
+      </section>
+      <section class="card note">Routing comes from OpenRouteService on OpenStreetMap data, never from Google — Google’s terms forbid exporting their directions. Two engines on two datasets will not pick the same roads; drag the pins or add stops to pin the shape down.</section>
+      <div class="fill"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+</div>
+
+<!-- @dev -->
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/capacitor/core.js"></script>
+<script src="vendor/capacitor/synapse.js"></script>
+<script src="vendor/capacitor/filesystem.js"></script>
+<script src="vendor/capacitor/share.js"></script>
+<script src="vendor/capacitor/clipboard.js"></script>
+<script src="vendor/capacitor/network.js"></script>
+<script src="vendor/capacitor/preferences.js"></script>
+<script src="vendor/capacitor/app.js"></script>
+<script src="vendor/capacitor/status-bar.js"></script>
+<script src="vendor/capacitor/secure-storage.js"></script>
+<script src="vendor/capacitor/share-target.js"></script>
+<script src="js/core.js"></script>
+<script src="js/engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

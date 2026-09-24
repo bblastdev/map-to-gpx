@@ -1,0 +1,3 @@
+node_modules/
+# Built from ../index.html and src/ by scripts/build-www.mjs on every build.
+www/

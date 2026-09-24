@@ -1,0 +1,25 @@
+{
+  "appId": "com.maptogpx.app",
+  "appName": "Map to GPX",
+  "webDir": "www",
+  "server": {
+    "hostname": "app.map-to-gpx.com",
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  },
+  "ios": {
+    "backgroundColor": "#0b0b0b"
+  },
+  "android": {
+    "backgroundColor": "#0b0b0b"
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "initialViewportFitValueHint": "cover"
+    },
+    "CapacitorShareTarget": {
+      "appGroupId": "group.com.maptogpx.app"
+    }
+  }
+}

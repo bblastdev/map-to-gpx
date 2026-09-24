@@ -13,3 +13,6 @@ supabase/
 
 # NOTE: lib/ must stay. api/*.js import lib/*.js, and Vercel traces those
 # imports into the function bundle — ignoring it would break the functions.
+
+# The native app: its own project, never part of the website.
+mobile/

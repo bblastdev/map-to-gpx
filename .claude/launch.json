@@ -4,8 +4,23 @@
     {
       "name": "map-to-gpx",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "map-to-gpx-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "mobile",
+        "run",
+        "dev"
+      ],
+      "port": 3001,
       "autoPort": true
     }
   ]
