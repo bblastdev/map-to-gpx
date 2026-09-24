@@ -927,6 +927,49 @@ test('the resolver passes on a sane viewbox and drops anything else', () => {
   }
 });
 
+test('in-app browsers are recognised, and real browsers never are', () => {
+  const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+  const DROID = 'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007; wv) AppleWebKit/537.36 ' +
+                '(KHTML, like Gecko) Version/4.0 Chrome/126.0.6478.71 Mobile Safari/537.36';
+  const inApp = {
+    'Threads iOS':     [`${IOS} Mobile/15E148 Barcelona 339.0.0.12.109 (iPhone15,2; iOS 17_5; en_US; en; scale=3.00)`, 'Threads'],
+    'Threads Android': [`${DROID} Barcelona 339.0.0.12.109 Android (34/14; 480dpi; 1080x2340; samsung)`, 'Threads'],
+    'Instagram iOS':   [`${IOS} Mobile/15E148 Instagram 339.0.3.12.91 (iPhone15,2; iOS 17_5; en_US)`, 'Instagram'],
+    'Facebook iOS':    [`${IOS} Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.109;FBDV/iPhone15,2]`, 'Facebook'],
+    'Facebook Android':[`${DROID} [FB_IAB/FB4A;FBAV/470.0.0.40.109;]`, 'Facebook'],
+    'Messenger iOS':   [`${IOS} Mobile/15E148 [FBAN/MessengerForiOS;FBAV/470.0.0.40.109]`, 'Messenger'],
+    'LINE':            [`${IOS} Mobile/15E148 Safari Line/14.10.0`, 'LINE'],
+    'TikTok':          [`${DROID} trill_350000 BytedanceWebview/d8a21c6`, 'TikTok'],
+    /* no app named, but plainly an app's own web view */
+    'unnamed Android WebView': [DROID, null],
+    'unnamed iOS WKWebView':   [`${IOS} Mobile/15E148`, null]
+  };
+  for (const [name, [ua, app]] of Object.entries(inApp)) {
+    const got = C.inAppBrowser(ua);
+    assert.ok(got, `${name} was not recognised`);
+    assert.equal(got.app, app, `${name} named as ${got.app}`);
+  }
+
+  /* real browsers: a notice here would be a false alarm in front of everyone */
+  const real = {
+    'Safari iOS':       `${IOS} Version/17.5 Mobile/15E148 Safari/604.1`,
+    'Chrome iOS':       `${IOS} CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1`,
+    'Firefox iOS':      `${IOS} FxiOS/127.0 Mobile/15E148 Safari/605.1.15`,
+    'Chrome Android':   'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+    'Samsung Internet': 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+    'desktop Chrome':   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+    'desktop Safari':   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+    'desktop Firefox':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0',
+    /* "Linux" and "Timeline/" must not read as LINE */
+    'Linux Firefox':    'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0 Timeline/2'
+  };
+  for (const [name, ua] of Object.entries(real)) {
+    assert.equal(C.inAppBrowser(ua), null, `${name} was mistaken for an in-app browser`);
+  }
+  assert.equal(C.inAppBrowser(''), null);
+  assert.equal(C.inAppBrowser(undefined), null);
+});
+
 test('distanceToTrack measures to the nearest vertex', () => {
   const track = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 0, lon: 2 }];
   assert.equal(Math.round(C.distanceToTrack({ lat: 0, lon: 1 }, track)), 0);

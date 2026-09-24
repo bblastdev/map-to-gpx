@@ -425,6 +425,21 @@
     font: 700 11.5px/1 var(--font); letter-spacing: .1em; text-transform: uppercase;
   }
   .targets button:disabled { opacity: .45; cursor: default; }
+  .inapp {
+    display: flex; flex-direction: column; gap: 8.2px; margin-bottom: 2px; padding: 13.1px 16.4px;
+    background: var(--olive); color: var(--paper); font: 400 11.5px/1.5 var(--font);
+  }
+  .inapp b { font: 700 11.5px/1.35 var(--font); }
+  .inapp button {
+    align-self: flex-start; display: flex; align-items: center; gap: 7.4px; min-height: 40px; padding: 0 13.1px;
+    border: 0; background: var(--paper); color: var(--black); cursor: pointer;
+    font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase;
+  }
+  .inapp button .ic { letter-spacing: 0; }
+  .inapp-link {
+    width: 100%; border: 0; padding: 9.8px; background: rgba(11,11,11,.3); color: var(--paper);
+    font: 400 11px/1.3 var(--font);
+  }
   .pair { display: flex; gap: 2px; margin-top: 2px; }
   .pair button { display: flex; align-items: center; justify-content: center; gap: 7.4px; flex: 1; min-height: 42px; border: 0; background: var(--surf2); color: var(--ink); font: 700 9.8px/1 var(--font); letter-spacing: .13em; text-transform: uppercase; cursor: pointer; }
   .pair button .ic { letter-spacing: 0; }
@@ -703,6 +718,15 @@
             <svg class="ic ic-f" aria-hidden="true"><use href="#f-seal-check" id="gpx-icon"/></svg>
             <span class="badge" id="gpx-badge"></span>
             <span class="file" id="gpx-file"></span>
+          </div>
+          <!-- A social app's own browser cannot save a file a page makes on the
+               spot, so Download does nothing there -- no file, no error. Say so
+               right above the button, with a way out that keeps the stops. -->
+          <div class="inapp" id="inapp" hidden>
+            <b id="inapp-title"></b>
+            <span>If Download does nothing, open this page in Chrome or Safari: use the ⋯ menu to open it in your browser, or copy the link and paste it there. Your stops come with it.</span>
+            <button type="button" id="btn-inapp-copy"><svg class="ic ic-e" aria-hidden="true"><use href="#b-link-simple"/></svg><span id="inapp-copy-label">Copy link for your browser</span></button>
+            <input class="inapp-link" id="inapp-link" readonly hidden aria-label="Link to open in your browser">
           </div>
           <button class="dl" id="btn-download"><span>Download GPX</span><svg class="ic ic-k" aria-hidden="true"><use href="#b-download-simple"/></svg></button>
           <div class="pair">
@@ -1394,6 +1418,46 @@ globalThis.MapToGPX = (function () {
     return null;
   }
 
+  /* ── in-app browsers ─────────────────────────────────────────────────── */
+
+  /*
+   * Social apps open links in a browser of their own, and those cannot save a
+   * file a page makes on the spot -- which is how Download works. Tap it inside
+   * Threads and nothing happens at all: no file, no error. App names follow the
+   * tokens each app adds to its user agent, as catalogued by the inapp-spy
+   * project; Threads calls itself by its codename, Barcelona. Threads comes
+   * before Instagram and Messenger before Facebook, because each is built on
+   * the other and may carry both tokens.
+   */
+  const IN_APP_BROWSERS = [
+    [/\bBarcelona\b/i, 'Threads'],
+    [/\bInstagram\b/i, 'Instagram'],
+    [/MessengerForiOS|Orca-Android/i, 'Messenger'],
+    [/\bFBAN\/|\bFBAV\/|\bFB_IAB\b|\bFBIOS\b|\bFB4A\b/, 'Facebook'],
+    [/\bTwitter\b/i, 'X'],
+    [/\bLine\//i, 'LINE'],
+    [/musical_ly|Bytedance/i, 'TikTok'],
+    [/\b(WAiOS|WA4A)\//i, 'WhatsApp'],
+    [/\bLinkedInApp\b/i, 'LinkedIn'],
+    [/\bMicroMessenger\//i, 'WeChat']
+  ];
+
+  /**
+   * Whether a page is open in an app's built-in browser rather than a real one:
+   * { app } naming the app where its user agent says, { app: null } where it
+   * is plainly an app's browser that does not, and null in a real browser.
+   */
+  function inAppBrowser(ua) {
+    const s = String(ua || '');
+    for (const [re, app] of IN_APP_BROWSERS) if (re.test(s)) return { app };
+    /* No app named, but still not a browser. Android marks its WebView with
+       "; wv)", and on iOS every real browser -- Safari, Chrome, Firefox, Edge --
+       carries a Safari/ token that an app's own web view does not. */
+    if (/Android.*;\s*wv\)/i.test(s)) return { app: null };
+    if (/\b(iPhone|iPod|iPad)\b/.test(s) && !/\bSafari\//.test(s)) return { app: null };
+    return null;
+  }
+
   /** Shortest distance from a point to any vertex of a track. */
   function distanceToTrack(p, track) {
     let best = Infinity;
@@ -1809,6 +1873,7 @@ globalThis.MapToGPX = (function () {
     bearingTo, destination, detourPoint, distanceTargets,
     zoomRadiusKm, plausibleFromViewportKm, viewboxAround, nearestCandidate,
     NAMED_LEG_LIMIT_KM, implausibleNamedLeg,
+    inAppBrowser,
     niceStep, axisTicks, gradeStats, smoothElevation, estimateDuration, PACE_MODELS,
     UNITS, unitsFor, toDistance, toElevation, defaultUnits,
     chunkWaypoints, shortLabel, routeName, slugify, buildFilename,
@@ -2784,7 +2849,7 @@ globalThis.MapToGPX = (function () {
     link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
-    copyLabel: 'Copy GPX', shareLabel: 'Share link',
+    copyLabel: 'Copy GPX', shareLabel: 'Share link', inappLabel: 'Copy link for your browser',
     units: 'metric'
   };
   let waypoints = [], plan = null, notes = [], splitPoints = [], splitNotes = [], altSearchDone = false;
@@ -3526,6 +3591,50 @@ globalThis.MapToGPX = (function () {
     setTimeout(() => { state.copyLabel = 'Copy GPX'; render(); }, 1800);
   }
 
+  /**
+   * Copy text any way this browser allows. In-app browsers are exactly where
+   * the async clipboard is most often blocked, and some of them still honour
+   * the older selection-based copy.
+   */
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (_) { /* try the old way */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
+  }
+
+  /**
+   * The way out of an app's browser: the share link, which carries the stops
+   * and profile, so the route rebuilds in a real browser instead of starting
+   * over. If neither clipboard will take it, the link is shown where it can be
+   * held and copied by hand -- there is always some way to get it out.
+   */
+  async function copyForBrowser() {
+    if (!waypoints.length) return;
+    const url = shareUrl();
+    if (await copyText(url)) {
+      state.inappLabel = 'Copied, paste it in Chrome or Safari';
+    } else {
+      const box = $('inapp-link');
+      box.value = url;
+      box.hidden = false;
+      box.focus();
+      box.select();
+      state.inappLabel = 'Press and hold the link to copy it';
+    }
+    render();
+    setTimeout(() => { state.inappLabel = 'Copy link for your browser'; render(); }, 2600);
+  }
+
   async function shareRoute() {
     if (!waypoints.length) return;
     const url = shareUrl();
@@ -3917,6 +4026,12 @@ globalThis.MapToGPX = (function () {
       $('gpx-file').textContent = r.filename;
       $('copy-label').textContent = s.copyLabel;
       $('share-label').textContent = s.shareLabel;
+      $('inapp').hidden = !IN_APP;
+      if (IN_APP) {
+        const who = IN_APP.app ? IN_APP.app + (/s$/i.test(IN_APP.app) ? '\u2019' : '\u2019s') : 'This app\u2019s';
+        $('inapp-title').textContent = `${who} built-in browser usually can\u2019t save files.`;
+        $('inapp-copy-label').textContent = s.inappLabel;
+      }
       setIcon('copy-icon', /copied/i.test(s.copyLabel) ? ICON.copied : ICON.copy);
       setIcon('share-icon', /copied/i.test(s.shareLabel) ? ICON.copied : ICON.share);
     }
@@ -3971,6 +4086,7 @@ globalThis.MapToGPX = (function () {
   });
   $('btn-find-alt').addEventListener('click', () => { if (!state.busy) findWaysRound(routeGen); });
   $('btn-download').addEventListener('click', download);
+  $('btn-inapp-copy').addEventListener('click', copyForBrowser);
   $('btn-copy').addEventListener('click', copyGpx);
   $('btn-share').addEventListener('click', shareRoute);
   $('btn-add').addEventListener('click', () => { state.addMode = !state.addMode; render(); });
@@ -4088,6 +4204,9 @@ globalThis.MapToGPX = (function () {
   /* ── boot ───────────────────────────────────────────────────────────── */
 
   state.units = loadUnits();
+
+  /* Asked once: the browser a page is open in does not change while it is. */
+  const IN_APP = C.inAppBrowser(navigator.userAgent);
 
   /* A key from config.local.js means nothing to ask for — the field stays in
      Settings for overriding, but the interface never shows the credential. */
