@@ -2141,7 +2141,7 @@ globalThis.MapToGPX = (function () {
           }, 45000);
         } catch (err) {
           throw new RoutingError(
-            'This site\'s routing service could not be reached.',
+            'Map to GPX\'s routing service could not be reached.',
             err && err.name === 'AbortError'
               ? 'The request timed out. Try again, or paste your own key in Settings.'
               : 'Check your connection, or paste your own OpenRouteService key in Settings.'
