@@ -675,6 +675,55 @@ test('mostDivergentPoint finds what makes an alternative different', () => {
   assert.equal(C.mostDivergentPoint(alt, []), null);
 });
 
+test('a motorcycle link is read as planned for a vehicle, with its stops exact', () => {
+  /* The link from the report that started this: three stops, shared from
+     Google Maps in motorcycle mode (!3e9). The mode used to be dropped. */
+  const url = 'https://www.google.com/maps/dir/Alun+Alun+Kota+Purwokerto,+Komplek+PJKA+386-388,+JL.+Jend.+Sudirman,+Purwokerto+Lor,+Jl.+Kabupaten,+Purwokerto,+Sokanegara,+Kec.+Purwokerto+Tim.,+Kabupaten+Banyumas,+Jawa+Tengah+53115/SPBU+44.532.04+Sampang,+Jl.+Tugu+Timur+4+No.RT.+3,+Sampang+Utara,+Sampang,+Cilacap+Regency,+Central+Java+53273/Tugu+Yogyakarta+Monument,+Jl.+Jend.+Sudirman,+Gowongan,+Jetis,+Yogyakarta+City,+Special+Region+of+Yogyakarta+55233/@-7.6946042,109.3590049,9.49z/data=!4m20!4m19!1m5!1m1!1s0x2e655e63847ad525:0x1094a0176a4f7eec!2m2!1d109.2301616!2d-7.4243772!1m5!1m1!1s0x2e654289c0d150ef:0xbd50e143ef7409bd!2m2!1d109.2040087!2d-7.5617509!1m5!1m1!1s0x2e7a591a4d553bd5:0xc0f964003add568b!2m2!1d110.3670608!2d-7.7829174!3e9!5m1!1e1?entry=tts';
+  const r = C.parseGoogleMapsUrl(url);
+  assert.equal(r.travelMode, 'two-wheeler');
+  assert.equal(C.plannedForVehicle(r.travelMode), true);
+  assert.equal(r.waypoints.length, 3);
+  assert.deepEqual(r.waypoints.map((w) => [w.lat, w.lon]),
+    [[-7.4243772, 109.2301616], [-7.5617509, 109.2040087], [-7.7829174, 110.3670608]]);
+
+  assert.equal(C.plannedForVehicle('driving'), true);
+  for (const mode of ['bicycling', 'walking', 'transit', null, undefined]) {
+    assert.equal(C.plannedForVehicle(mode), false, String(mode));
+  }
+});
+
+test('divergentStretch marks where one line runs apart from another', () => {
+  /* base runs due east for 30 steps; alt keeps to it for the first and last
+     ten and swings ~5.5 km north in between -- the coast road against the
+     inland one, in miniature. */
+  const base = [], alt = [];
+  for (let i = 0; i <= 30; i++) {
+    base.push({ lat: 0, lon: i * 0.01 });
+    const t = i < 10 || i > 20 ? 0 : Math.sin(((i - 10) / 10) * Math.PI);
+    alt.push({ lat: t * 0.05, lon: i * 0.01 });
+  }
+  const s = C.divergentStretch(alt, base, 1000);
+  assert.ok(s, 'expected a stretch');
+  assert.ok(s.start > 9 && s.start < 13, `starts near where they part, got ${s.start}`);
+  assert.ok(s.end > 17 && s.end < 21, `ends near where they rejoin, got ${s.end}`);
+  assert.ok(Math.abs(s.peak - 15) <= 1, `peaks in the middle, got ${s.peak}`);
+  assert.ok(s.distance > 5000 && s.distance < 6000, `got ${Math.round(s.distance)} m`);
+
+  /* never that far apart, or not apart at all: nothing to hold a route to */
+  assert.equal(C.divergentStretch(alt, base, 8000), null);
+  assert.equal(C.divergentStretch(base, base, 100), null);
+  assert.equal(C.divergentStretch([], base, 100), null);
+
+  /* points to hold a route to it fall inside the stretch, in order */
+  const pins = C.pointsAlongStretch(alt, s.start, s.end, 3);
+  assert.equal(pins.length, 3);
+  for (let k = 0; k < pins.length; k++) {
+    assert.ok(pins[k].index > s.start && pins[k].index < s.end, `pin ${k} at ${pins[k].index}`);
+    if (k) assert.ok(pins[k].index > pins[k - 1].index);
+  }
+  assert.deepEqual(C.pointsAlongStretch(alt, 5, 5, 3), []);
+});
+
 test('corridorPinCount holds an alternative to its corridor without over-pinning', () => {
   /* a pin roughly every 1.2 km, so a 13.4 km way round gets eleven of them --
      enough that the profile cannot wander back onto the main route between two */

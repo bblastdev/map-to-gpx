@@ -842,7 +842,9 @@ globalThis.MapToGPX = (function () {
 
   const SHORT_HOSTS = new Set(['maps.app.goo.gl', 'goo.gl', 'g.co', 'maps.google.com.sg']);
   const CURRENT_LOCATION_WORDS = /^(current location|my location|your location|meine position|lokasi saya)$/i;
-  const TRAVEL_MODE_BY_3E = { '0': 'driving', '1': 'bicycling', '2': 'walking', '3': 'transit', '4': 'flying' };
+  /* 9 is Google's two-wheeler mode -- the motorcycle icon, and in Indonesia the
+     mode most directions links are shared in. */
+  const TRAVEL_MODE_BY_3E = { '0': 'driving', '1': 'bicycling', '2': 'walking', '3': 'transit', '4': 'flying', '9': 'two-wheeler' };
   const TRAVEL_MODE_BY_DIRFLG = { w: 'walking', b: 'bicycling', r: 'transit', d: 'driving' };
   const PROFILE_SUFFIX = {
     'foot-walking': 'walking',
@@ -1135,6 +1137,16 @@ globalThis.MapToGPX = (function () {
     if (travelMode === 'walking') return 'foot-walking';
     if (travelMode === 'bicycling') return 'cycling-regular';
     return null;
+  }
+
+  /**
+   * Whether Google planned the route for a car or a motorcycle. Google offers
+   * no bicycle directions across most of Asia, so nearly every Indonesian link
+   * arrives this way -- and a route copied from one should take the roads a
+   * motor vehicle takes, not the ones a bike profile would pick for itself.
+   */
+  function plannedForVehicle(travelMode) {
+    return travelMode === 'driving' || travelMode === 'two-wheeler';
   }
 
   /* ── track post-processing ───────────────────────────────────────────── */
@@ -1485,6 +1497,46 @@ globalThis.MapToGPX = (function () {
       if (d > bestD) { bestD = d; best = alt[i]; }
     }
     return best ? { lat: best.lat, lon: best.lon, distance: bestD } : null;
+  }
+
+  /**
+   * Where `alt` runs apart from `base`: the stretch around its furthest point,
+   * out to where the two come back within `rejoinM` of each other. Gives the
+   * index range on `alt`, the index of that furthest point and how far out it
+   * is -- or null when they never get more than `apartM` apart. Sampled, like
+   * mostDivergentPoint: this marks a corridor, it does not survey one.
+   */
+  function divergentStretch(alt, base, apartM, rejoinM) {
+    if (!alt || alt.length < 2 || !base || !base.length) return null;
+    const n = 150;
+    const step = Math.max(1, Math.floor(alt.length / n));
+    const baseStep = Math.max(1, Math.floor(base.length / n));
+    const thinBase = base.filter((_, i) => i % baseStep === 0);
+    const at = [], away = [];
+    for (let i = 0; i < alt.length; i += step) { at.push(i); away.push(distanceToTrack(alt[i], thinBase)); }
+    let peak = 0;
+    for (let k = 1; k < away.length; k++) if (away[k] > away[peak]) peak = k;
+    if (!(away[peak] > apartM)) return null;
+    const near = rejoinM != null ? rejoinM : 300;
+    let s = peak, e = peak;
+    while (s > 0 && away[s - 1] > near) s--;
+    while (e < away.length - 1 && away[e + 1] > near) e++;
+    return { start: at[s], end: at[e], peak: at[peak], distance: away[peak] };
+  }
+
+  /** `count` points spread evenly inside points[start..end], each with its index. */
+  function pointsAlongStretch(points, start, end, count) {
+    const cum = cumulativeDistances(points);
+    const from = cum[start], to = cum[end];
+    const out = [];
+    if (!(to > from) || !(count > 0)) return out;
+    let i = start;
+    for (let k = 1; k <= count; k++) {
+      const target = from + (to - from) * k / (count + 1);
+      while (i < end && cum[i] < target) i++;
+      out.push({ lat: points[i].lat, lon: points[i].lon, index: i });
+    }
+    return out;
   }
 
   /**
@@ -1858,8 +1910,9 @@ globalThis.MapToGPX = (function () {
     ParseError, ShortLinkError,
     GPX_NS, MAX_WAYPOINTS_PER_REQUEST, PROFILE_SUFFIX,
     isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseGeocodeParam, parseLatLng, decodeSegment,
-    suggestProfile, haversine, dedupePoints, cumulativeDistances, elevationStats,
+    suggestProfile, plannedForVehicle, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
+    divergentStretch, pointsAlongStretch,
     bearingTo, destination, detourPoint, distanceTargets,
     zoomRadiusKm, plausibleFromViewportKm, viewboxAround, nearestCandidate,
     NAMED_LEG_LIMIT_KM, implausibleNamedLeg,
@@ -2123,8 +2176,12 @@ globalThis.MapToGPX = (function () {
       /* Corridors are borrowed by a foot or bike profile, so the car must be kept
          off the roads those profiles are banned from. Without this the corridor
          runs down a motorway, every pin on it snaps a few hundred metres to
-         whatever service road is nearest, and the ride detours to each one. */
-      if (opts && opts.avoidMotorways) {
+         whatever service road is nearest, and the ride detours to each one.
+         The same holds when the car route is the ride itself, for a link Google
+         planned for a car or a motorcycle: nobody rides a toll road. So a car
+         stays off them unless a caller says otherwise, as one last resort does. */
+      const avoidMotorways = opts && opts.avoidMotorways != null ? opts.avoidMotorways : profile === 'driving-car';
+      if (avoidMotorways) {
         payload.options = Object.assign({}, payload.options,
           { avoid_features: ['highways', 'tollways'] });
       }
@@ -2434,7 +2491,10 @@ globalThis.MapToGPX = (function () {
       if (waypoints.length === 2) {
         try {
           onProgress('Asking OpenRouteService for the route…');
-          const geo = await this.orsDirections(profile, waypoints, { alternatives: true });
+          /* ORS searches for a car's alternatives only up to 100 km of road; past
+             ~75 km apart in a straight line that is spent, so ask for the one. */
+          const alternatives = !(profile === 'driving-car' && C.haversine(waypoints[0], waypoints[1]) > 75000);
+          const geo = await this.orsDirections(profile, waypoints, { alternatives });
           return {
             kind: 'direct',
             waypoints,
@@ -2442,6 +2502,16 @@ globalThis.MapToGPX = (function () {
           };
         } catch (err) {
           if (!(err instanceof RoutingError && err.limitExceeded)) throw err;
+          /* A car route is never too long for ORS; only the search for its
+             alternatives is, past 100 km. Ask again for the one route. */
+          if (profile === 'driving-car') {
+            const geo = await this.orsDirections(profile, waypoints);
+            return {
+              kind: 'direct',
+              waypoints,
+              options: [Object.assign(this.featureToRoute(geo.features[0]), { id: 0, label: null, ready: true })]
+            };
+          }
           return await this.corridorChoices(profile, waypoints, err, onProgress);
         }
       }
@@ -2454,7 +2524,7 @@ globalThis.MapToGPX = (function () {
           : 'Asking OpenRouteService for the route…');
         parts.push(await this.routeSegment(profile, chunks[i], onProgress, 0));
       }
-      return { kind: 'single', options: [Object.assign(this.stitch(parts), { id: 0, label: null, ready: true })] };
+      return { kind: 'single', waypoints, options: [Object.assign(this.stitch(parts), { id: 0, label: null, ready: true })] };
     },
 
     /** Alternatives of the driving corridor, as choices of "which way round". */
@@ -2484,7 +2554,7 @@ globalThis.MapToGPX = (function () {
         /* Nowhere to go without a motorway happens — an estuary crossing, an
            alpine tunnel. Take the corridor anyway; the pinning below is looser
            than the ride, and a corridor is still better than no alternative. */
-        try { geo = await this.orsDirections('driving-car', waypoints, { alternatives: true }); }
+        try { geo = await this.orsDirections('driving-car', waypoints, { alternatives: true, avoidMotorways: false }); }
         catch (__) { return []; }
       }
       const kept = [];
@@ -2690,12 +2760,13 @@ globalThis.MapToGPX = (function () {
         if (opt.label) continue;
         const track = opt.corridorPoints || opt.points;
         if (!track) continue;
-        if (opt === base) {
+        if (opt === base && !plan.namedByPlace) {
           opt.label = 'Fastest';
         } else {
-          const spot = C.mostDivergentPoint(track, baseTrack);
+          const other = opt === base ? (plan.options[1].corridorPoints || plan.options[1].points) : baseTrack;
+          const spot = C.mostDivergentPoint(track, other);
           /* Under ~2 km apart the "difference" is noise, not a different way. */
-          if (!spot || spot.distance < 2000) { opt.label = 'Alternative'; }
+          if (!spot || spot.distance < 2000) { opt.label = opt === base ? 'Shorter and flatter' : 'Alternative'; }
           else {
             const hit = await this.nearestMappedPoint(spot);
             const name = hit && hit.display
@@ -2731,18 +2802,158 @@ globalThis.MapToGPX = (function () {
       return parsed;
     },
 
-    /** Route an already-located waypoint list. Returns {plan, chosen}. */
-    async route(profile, waypoints, onProgress) {
+    /**
+     * Route an already-located waypoint list. Returns {plan, chosen}.
+     *
+     * driving-car is the profile for a link Google planned for a car or a
+     * motorcycle (plannedForVehicle). Then, unless opts.explore is false -- a
+     * reroute after someone moved the stops themselves -- a second opinion is
+     * asked for at the same time; see preferCorridor. opts.fallback is the
+     * profile to ride instead if a stop is somewhere no car can reach.
+     */
+    async route(profile, waypoints, onProgress, opts) {
       this.legSplitNotes = []; this.legSplitPoints = [];
       onProgress('Asking OpenRouteService for the route…', 'route');
-      const plan = await this.buildRouteOptions(profile, waypoints, (m) => onProgress(m, 'route'));
+      const vehicle = profile === 'driving-car';
+      const explore = vehicle && !(opts && opts.explore === false) &&
+        waypoints.length <= C.MAX_WAYPOINTS_PER_REQUEST;
+      /* Only needed when the car brings no ways round of its own: with stops in
+         between, or stops too far apart for its alternatives (100 km of road).
+         Then it is started alongside the car route and adds no waiting; a
+         failure only means no second opinion. */
+      const askSecond = () => this.orsDirections('cycling-regular', waypoints).catch(() => null);
+      const apart = C.haversine(waypoints[0], waypoints[waypoints.length - 1]);
+      let second = explore && (waypoints.length > 2 || apart > 75000) ? askSecond() : null;
+
+      let plan;
+      try {
+        plan = await this.buildRouteOptions(profile, waypoints, (m) => onProgress(m, 'route'));
+      } catch (err) {
+        /* The middle of a town square, a path through a park: a stop a rider can
+           reach and a car cannot. Ride it on the rider's own profile rather than
+           not at all, and say that the roads may differ. */
+        const unreachable = err instanceof RoutingError && /error 20(09|10)\b/.test(err.detail || '');
+        if (!(vehicle && unreachable && opts && opts.fallback)) throw err;
+        const out = await this.route(opts.fallback, waypoints, onProgress, { explore: false });
+        this.legSplitNotes.push('No car route reaches ' + (/coordinate\s+(\d+)/i.test(err.detail || '')
+          ? this.stopLabel(waypoints, Number(/coordinate\s+(\d+)/i.exec(err.detail)[1])) : 'one of the stops') +
+          ', so this one is routed for your activity rather than the way Google\'s car or motorcycle ' +
+          'directions go, and may take other roads.');
+        return out;
+      }
+
       let chosen = plan.options[0];
       if (!chosen.ready) chosen = await this.realiseCorridor(profile, plan, chosen, (m) => onProgress(m, 'route'));
       if (!chosen.points || chosen.points.length < 2) {
         throw new RoutingError('OpenRouteService returned an empty route.',
           'Try a different profile, or check that the stops are reachable on foot or by bike.');
       }
+      if (explore && !second && plan.options.length === 1) second = askSecond();
+      if (second) {
+        const geo = await second;
+        const f = geo && geo.features && geo.features[0];
+        if (f) {
+          await this.preferCorridor(plan, this.featureToRoute(f), (m) => onProgress(m, 'route'));
+          chosen = plan.options[0];
+        }
+      }
       return { plan, chosen };
+    },
+
+    /**
+     * The car's own route can take the other of two main roads. Google's line
+     * is not in the link, and OpenRouteService has no traffic and knows speeds
+     * only from road tags: Purwokerto to Yogyakarta, Google follows the flat
+     * coast road through Petanahan and Wates, 174 km, while the car profile goes
+     * inland through Purworejo, 181 km -- and the road-bike profile, which the
+     * app used to ride, goes over the Menoreh hills, 184 km and 760 m up.
+     *
+     * The city-bike profile weighs roads differently, and there it found the
+     * coast. So where its line runs more than a kilometre from the car's, the
+     * car is routed again through the point where the two are furthest apart:
+     * main roads still, on the other corridor -- 175.5 km along the coast on
+     * that route. (Three points along the stretch hold it tighter but pull the
+     * car onto the side roads a bike profile likes; that came back 184 km, so
+     * it is only the fallback.)
+     *
+     * The result joins the ways round, and goes first when it is at least 2%
+     * shorter, no hillier, and no more than 10% slower by OpenRouteService's own
+     * reckoning -- its speeds come from road tags and know nothing of towns and
+     * traffic, which is exactly where it and Google part. There, ORS makes the
+     * coast 3.6% slower and it is 2.9% shorter; a corridor on village lanes
+     * comes out far slower than that and stays second.
+     */
+    async preferCorridor(plan, alt, onProgress) {
+      const corridor = alt.points;
+      const main = plan.options[0];
+      const stops = plan.waypoints;
+      if (!main || !main.points || !(main.distance >= 10000) || !stops || stops.length < 2) return;
+      const stretch = C.divergentStretch(corridor, main.points, 1000);
+      if (!stretch) return;
+
+      /* Where each stop falls along the corridor, so the new points slot in
+         between the right pair of stops. */
+      const indexOf = (p) => {
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < corridor.length; i++) {
+          const d = C.haversine(p, corridor[i]);
+          if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+      };
+      const stopAt = stops.map(indexOf);
+      for (let i = 1; i < stopAt.length; i++) if (stopAt[i] < stopAt[i - 1]) return;
+      const asStop = (p) => ({
+        kind: 'coords', lat: p.lat, lon: p.lon, source: 'auto-split',
+        label: `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`
+      });
+      const chainWith = (pins) => {
+        const chain = [];
+        stops.forEach((w, i) => {
+          chain.push(w);
+          if (i < stops.length - 1) {
+            for (const p of pins) if (p.index > stopAt[i] && p.index <= stopAt[i + 1]) chain.push(asStop(p));
+          }
+        });
+        return chain;
+      };
+
+      onProgress('Checking the other main road between the stops…');
+      const peak = Object.assign({ index: stretch.peak }, corridor[stretch.peak]);
+      /* Kept only if it really runs that way, and without a loop out to the
+         point and back: a held route longer than both lines it came from has
+         gone somewhere neither of them went. */
+      const holds = (r) => r && C.distanceToTrack(peak, r.points) <= 700 &&
+        r.distance <= Math.max(main.distance, alt.distance || 0) * 1.02;
+      let built = null;
+      for (const pins of [[peak], C.pointsAlongStretch(corridor, stretch.start, stretch.end, 3)]) {
+        const chain = chainWith(pins);
+        if (chain.length === stops.length || chain.length > C.MAX_WAYPOINTS_PER_REQUEST) continue;
+        try {
+          const r = await this.routeSegment('driving-car', chain, onProgress, 1);
+          if (holds(r)) { built = r; break; }
+        } catch (_) { /* that point is somewhere a car cannot go; try the others */ }
+      }
+      if (!built) return;
+      /* Not a way round the list already has: another corridor means more than
+         a kilometre apart from each of them somewhere, as the stretch was. */
+      if (plan.options.some((o) => o.points && (C.mostDivergentPoint(built.points, o.points, 80) || {}).distance < 1000)) return;
+
+      const option = Object.assign(built, { label: null, ready: true, splitPoints: [] });
+      const shorter = option.distance <= 0.98 * main.distance;
+      const noHillier = option.ascent == null || main.ascent == null || option.ascent <= main.ascent * 1.15 + 50;
+      const notMuchSlower = !(option.duration > 0 && main.duration > 0) || option.duration <= main.duration * 1.10;
+      if (shorter && noHillier && notMuchSlower) {
+        option.note = 'Two main roads run between these stops. This is the shorter, flatter one, usually the ' +
+          'one Google takes. If Google\'s line follows the other, pick it under Ways round.';
+        plan.options.unshift(option);
+        /* Neither is "Fastest" once the car profile's own pick is not first:
+           both are named by where they run. */
+        plan.namedByPlace = true;
+      } else {
+        plan.options.push(option);
+      }
+      plan.options.forEach((o, i) => { o.id = i; });
     }
   };
 
@@ -2782,6 +2993,12 @@ globalThis.MapToGPX = (function () {
   ];
   const paceFor = (id) => (PROFILES.find((p) => p.id === id) || {}).pace || id;
   const orsFor  = (id) => (PROFILES.find((p) => p.id === id) || {}).ors  || id;
+  /* Which network the route is drawn on. A link Google planned for a car or a
+     motorcycle -- nearly every Indonesian one, as Google has no bike directions
+     there -- is copied on the roads a motor vehicle takes, whether the ride
+     is a ride or a run; see Engine.route. Anything else routes on the
+     activity's own profile. */
+  const routingFor = () => C.plannedForVehicle(state.travelMode) ? 'driving-car' : orsFor(state.profile);
   /* Icons that change with state; the rest are baked into the markup. */
   const ICON = {
     stepDone: 'f-check-circle',
@@ -2836,7 +3053,7 @@ globalThis.MapToGPX = (function () {
   /* ── state ──────────────────────────────────────────────────────────── */
 
   const state = {
-    link: '', profile: 'cycling-road', key: '', resolver: '/api/resolve', proxy: '',
+    link: '', profile: 'cycling-road', travelMode: null, key: '', resolver: '/api/resolve', proxy: '',
     host: 'auto', settingsOpen: false, busy: false, step: null, progressMsg: '', elapsed: '',
     error: null, result: null, selected: 0, addMode: false,
     copyLabel: 'Copy GPX', shareLabel: 'Share link', inappLabel: 'Copy link for your browser',
@@ -2868,6 +3085,7 @@ globalThis.MapToGPX = (function () {
            state.profile set to something with no button to show it: routed
            correctly, but with nothing selected in the interface. */
         profile: PROFILES.some((p) => p.id === data.p) ? data.p : 'cycling-road',
+        travelMode: typeof data.m === 'string' ? data.m : null,
         link: data.u || '',
         waypoints: data.w.map((t) => ({
           kind: 'coords', lat: t[0], lon: t[1],
@@ -2880,6 +3098,7 @@ globalThis.MapToGPX = (function () {
   function shareUrl() {
     const data = {
       p: state.profile,
+      m: state.travelMode || undefined,
       u: state.link || '',
       w: waypoints.map((w) => [Number(w.lat.toFixed(5)), Number(w.lon.toFixed(5)), String(w.label || '').slice(0, 40)])
     };
@@ -3358,13 +3577,18 @@ globalThis.MapToGPX = (function () {
       const parsed = await engine().resolveInput(input, progress);
       waypoints = parsed.waypoints;
       notes = parsed.notes || [];
+      state.travelMode = parsed.travelMode || null;
       if (parsed.expandedUrl) { state.link = parsed.expandedUrl; $('link').value = parsed.expandedUrl; }
       await runRoute(true);
     } catch (err) { fail(err); }
   }
 
-  /** Re-route the stops we already have (drag, insert, remove, profile change). */
-  async function routeCurrent() {
+  /**
+   * Re-route the stops we already have (drag, insert, remove, profile change).
+   * `fresh` routes them the way a new conversion does -- for a shared link,
+   * whose stops should come back as the same route the sender saw.
+   */
+  async function routeCurrent(fresh) {
     if (!waypoints || waypoints.length < 2) return;
     /* No key: open Settings and clear any stale error — leaving the last
        failure on screen next to a freshly-opened key field reads as if the
@@ -3374,14 +3598,15 @@ globalThis.MapToGPX = (function () {
     Object.assign(state, { busy: true, error: null, step: 'route', progressMsg: 'Rerouting…' });
     render();
     startClock();
-    try { await runRoute(false); } catch (err) { fail(err); }
+    try { await runRoute(fresh === true); } catch (err) { fail(err); }
   }
 
   async function runRoute(withLabels) {
     altSearchDone = false; altSearching = false;   /* a new route deserves a fresh look */
     const gen = ++routeGen;
     const eng = engine();
-    const out = await eng.route(orsFor(state.profile), waypoints, progress);
+    const out = await eng.route(routingFor(), waypoints, progress,
+      { explore: withLabels, fallback: orsFor(state.profile) });
     plan = out.plan;
     splitPoints = eng.legSplitPoints.concat(out.chosen.splitPoints || []);
     splitNotes = eng.legSplitNotes.concat(out.chosen.note ? [out.chosen.note] : []);
@@ -3396,7 +3621,8 @@ globalThis.MapToGPX = (function () {
     /* Google shows the other ways round without being asked, so this does too.
        It starts only once the route is drawn and never touches state.busy, so
        it costs no waiting -- the section fills itself in a moment later. */
-    if (plan.kind === 'direct' && plan.options.length === 1) findWaysRound(gen);
+    /* A car route brings its own ways round; asking the car again finds nothing new. */
+    if (plan.kind === 'direct' && plan.options.length === 1 && routingFor() !== 'driving-car') findWaysRound(gen);
   }
 
   /**
@@ -3411,7 +3637,7 @@ globalThis.MapToGPX = (function () {
     let found = null;
     try {
       found = await engine().otherWaysRound(
-        orsFor(state.profile), plan.waypoints, state.result.points, () => { });
+        routingFor(), plan.waypoints, state.result.points, () => { });
     } catch (_) { found = null; }
     if (gen !== routeGen) return;   /* a newer route owns the interface now */
     altSearching = false;
@@ -3437,8 +3663,8 @@ globalThis.MapToGPX = (function () {
       try {
         const eng = engine();
         await (opt.via
-          ? eng.realiseVia(orsFor(state.profile), plan, opt, (m) => progress(m, 'route'))
-          : eng.realiseCorridor(orsFor(state.profile), plan, opt, (m) => progress(m, 'route')));
+          ? eng.realiseVia(routingFor(), plan, opt, (m) => progress(m, 'route'))
+          : eng.realiseCorridor(routingFor(), plan, opt, (m) => progress(m, 'route')));
         splitPoints = eng.legSplitPoints.concat(opt.splitPoints || []);
         splitNotes = eng.legSplitNotes.concat(opt.note ? [opt.note] : []);
       } catch (err) { return fail(err); }
@@ -3470,7 +3696,7 @@ globalThis.MapToGPX = (function () {
     let found = null;
     try {
       found = await engine().stretchToDistance(
-        orsFor(state.profile), plan, targetM, direct, (m) => progress(m, 'route'));
+        routingFor(), plan, targetM, direct, (m) => progress(m, 'route'));
     } catch (err) { stopClock(); return fail(err); }
     stopClock();
     Object.assign(state, { busy: false, step: null });
@@ -3754,9 +3980,14 @@ globalThis.MapToGPX = (function () {
       txt.append(el('b', null, p.name), el('i', null, p.sub));
       b.append(icon(p.icon, 'ic-i'), txt);
       b.addEventListener('click', () => {
+        const roads = routingFor();
         state.profile = p.id;
         render();
-        if (state.result) routeCurrent();
+        if (!state.result) return;
+        /* Same network either way -- a route copied from a car or motorcycle
+           link -- so only the pace and the file change, and nothing is rerouted. */
+        if (plan && routingFor() === roads) { commit(plan.options[state.selected] || plan.options[0], state.selected); render(); }
+        else routeCurrent();
       });
       pw.appendChild(b);
     });
@@ -3928,7 +4159,8 @@ globalThis.MapToGPX = (function () {
 
         /* The search now runs on its own after every route, so this is only a
            way to ask again when that one failed. */
-        $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone || altSearching;
+        $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone || altSearching ||
+          routingFor() === 'driving-car';
         $('btn-find-alt').disabled = s.busy;
 
         const box = $('opts');
@@ -4219,6 +4451,7 @@ globalThis.MapToGPX = (function () {
   if (shared) {
     state.link = shared.link || '';
     state.profile = shared.profile;
+    state.travelMode = shared.travelMode;
     if (shared.waypoints) {
       waypoints = shared.waypoints;
       notes = ['Loaded from a shared link — the stops came with it, the route is rebuilt on OpenStreetMap.'];
@@ -4234,7 +4467,7 @@ globalThis.MapToGPX = (function () {
   } else {
     initMap();
     wirePinDragging();
-    if (shared && shared.waypoints && state.key.trim()) setTimeout(routeCurrent, 60);
+    if (shared && shared.waypoints && state.key.trim()) setTimeout(() => routeCurrent(true), 60);
   }
 })();
 </script>
