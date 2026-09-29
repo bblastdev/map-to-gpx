@@ -58,6 +58,11 @@
   ];
   const paceFor = (id) => (PROFILES.find((p) => p.id === id) || {}).pace || id;
   const orsFor = (id) => (PROFILES.find((p) => p.id === id) || {}).ors || id;
+  /* Which network a route is drawn on. A link Google planned for a car or a
+     motorcycle -- nearly every Indonesian one -- is copied on the roads a motor
+     vehicle takes, for a ride or a run alike; see Engine.route on the site.
+     Anything else routes on the activity's own profile. */
+  const routingFor = (profile) => C.plannedForVehicle(state.travelMode) ? 'driving-car' : orsFor(profile || state.profile);
   const ICON = {
     stepDone: 'f-check-circle', start: 'f-play-circle', mid: 'f-map-pin', finish: 'f-flag-checkered',
     valid: 'f-seal-check', invalid: 'f-warning', copy: 'b-copy', copied: 'b-check',
@@ -100,7 +105,7 @@
   /* ── state ────────────────────────────────────────────────────────────── */
 
   const state = {
-    view: 'home', link: '', fromShare: false, profile: 'cycling-road', units: 'metric',
+    view: 'home', link: '', fromShare: false, profile: 'cycling-road', travelMode: null, units: 'metric',
     key: '', host: 'auto', settingsOpen: false,
     busy: false, step: null, progressMsg: '', elapsed: '0s',
     error: null, result: null, selected: 0, addMode: false,
@@ -155,7 +160,7 @@
     if (!r || !plan) return;
     const opt = plan.options[state.selected] || plan.options[0];
     const record = {
-      v: 1, savedAt: Date.now(), link: state.link, profile: state.profile, name: r.name,
+      v: 1, savedAt: Date.now(), link: state.link, profile: state.profile, travelMode: state.travelMode || null, name: r.name,
       waypoints: waypoints.map((w) => ({ kind: w.kind, label: w.label, lat: w.lat, lon: w.lon, source: w.source })),
       option: {
         label: opt && opt.label || null,
@@ -244,7 +249,7 @@
      same stops there. */
   function shareUrl() {
     const data = {
-      p: state.profile, u: state.link || '',
+      p: state.profile, m: state.travelMode || undefined, u: state.link || '',
       w: waypoints.map((w) => [Number(w.lat.toFixed(5)), Number(w.lon.toFixed(5)), String(w.label || '').slice(0, 40)])
     };
     const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(data)))).replace(/\+/g, '-').replace(/\//g, '_');
@@ -687,6 +692,7 @@
       const parsed = await engine().resolveInput(input, progress);
       waypoints = parsed.waypoints;
       notes = parsed.notes || [];
+      state.travelMode = parsed.travelMode || null;
       if (parsed.expandedUrl) state.link = parsed.expandedUrl;
       await runRoute(true);
       state.detent = 'half';
@@ -708,7 +714,7 @@
     altSearchDone = false; altSearching = false;
     const gen = ++routeGen;
     const eng = engine();
-    const out = await eng.route(orsFor(state.profile), waypoints, progress);
+    const out = await eng.route(routingFor(), waypoints, progress, { explore: withLabels, fallback: orsFor(state.profile) });
     plan = out.plan;
     splitPoints = eng.legSplitPoints.concat(out.chosen.splitPoints || []);
     splitNotes = eng.legSplitNotes.concat(out.chosen.note ? [out.chosen.note] : []);
@@ -721,7 +727,8 @@
     if (withLabels && plan.options.length > 1) eng.labelOptions(plan, (p) => { if (plan === p) render(); });
     /* Google shows the other ways round unasked, so this does too -- after the
        route is on screen, never in front of it. */
-    if (plan.kind === 'direct' && plan.options.length === 1) findWaysRound(gen);
+    /* A car route brings its own ways round; asking the car again finds nothing new. */
+    if (plan.kind === 'direct' && plan.options.length === 1 && routingFor() !== 'driving-car') findWaysRound(gen);
   }
 
   async function findWaysRound(gen) {
@@ -729,7 +736,7 @@
     altSearching = true;
     render();
     let found = null;
-    try { found = await engine().otherWaysRound(orsFor(state.profile), plan.waypoints, state.result.points, () => { }); }
+    try { found = await engine().otherWaysRound(routingFor(), plan.waypoints, state.result.points, () => { }); }
     catch (_) { found = null; }
     if (gen !== routeGen) return;
     altSearching = false;
@@ -755,8 +762,8 @@
       try {
         const eng = engine();
         await (opt.via
-          ? eng.realiseVia(orsFor(state.profile), plan, opt, (m) => progress(m, 'route'))
-          : eng.realiseCorridor(orsFor(state.profile), plan, opt, (m) => progress(m, 'route')));
+          ? eng.realiseVia(routingFor(), plan, opt, (m) => progress(m, 'route'))
+          : eng.realiseCorridor(routingFor(), plan, opt, (m) => progress(m, 'route')));
         splitPoints = eng.legSplitPoints.concat(opt.splitPoints || []);
         splitNotes = eng.legSplitNotes.concat(opt.note ? [opt.note] : []);
       } catch (err) { return fail(err); }
@@ -779,7 +786,7 @@
     render();
     startClock();
     let found = null;
-    try { found = await engine().stretchToDistance(orsFor(state.profile), plan, targetM, direct, (m) => progress(m, 'route')); }
+    try { found = await engine().stretchToDistance(routingFor(), plan, targetM, direct, (m) => progress(m, 'route')); }
     catch (err) { stopClock(); return fail(err); }
     stopClock();
     Object.assign(state, { busy: false, step: null });
@@ -943,6 +950,7 @@
     if (!rec) { state.last = null; return render(); }
     state.link = rec.link || '';
     state.profile = PROFILES.some((p) => p.id === rec.profile) ? rec.profile : 'cycling-road';
+    state.travelMode = typeof rec.travelMode === 'string' ? rec.travelMode : null;
     /* Each stop keeps its kind, so a stop found by name is still named by it:
        the title and the file name are read from that. */
     waypoints = rec.waypoints.map((w) => ({ kind: w.kind || 'coords', label: w.label, lat: w.lat, lon: w.lon, source: w.source || 'saved' }));
@@ -986,12 +994,18 @@
         txt.append(el('b', null, p.name), el('i', null, p.sub));
         b.append(icon(p.icon), txt);
         b.addEventListener('click', () => {
-          if (state.offline && state.result && id === 'profiles-route') return toast('Changing activity reroutes, which needs a connection.');
           if (state.profile === p.id) return;
+          const onRoute = !!(state.result && id === 'profiles-route');
+          /* A route copied from a car or motorcycle link runs on the same roads
+             for a ride or a run: only the pace and the file change, so nothing
+             is rerouted -- and it works offline. */
+          const sameRoads = onRoute && !!plan && routingFor(p.id) === routingFor();
+          if (onRoute && !sameRoads && state.offline) return toast('Changing activity reroutes, which needs a connection.');
           state.profile = p.id;
           prefSet('profile', p.id);
+          if (sameRoads) { commit(plan.options[state.selected] || plan.options[0], state.selected); saveLast(); }
           render();
-          if (state.result && id === 'profiles-route') routeCurrent();
+          if (onRoute && !sameRoads) routeCurrent();
         });
         box.appendChild(b);
       });
@@ -1148,7 +1162,8 @@
     $('chart').style.display = r.hasElevation ? '' : 'none';
 
     const locked = s.offline || s.busy;
-    $('profiles-route').classList.toggle('locked', s.offline);
+    /* Offline, switching activity is locked only where it would reroute. */
+    $('profiles-route').classList.toggle('locked', s.offline && !C.plannedForVehicle(s.travelMode));
 
     /* ways round */
     const opts = (plan && plan.options) || [];
@@ -1161,7 +1176,8 @@
       : plan.kind === 'single' ? 'Alternatives only come back for a plain two-stop route. Remove the stops in between to see other ways round.'
       : altSearchDone ? 'Nothing else to offer: OpenRouteService suggested no alternative, and the road network has no other way round that is meaningfully different from this one.'
       : 'OpenRouteService offered no meaningfully different alternative here — it only suggests one when the detour shares less than about 60% of this route.';
-    $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone || altSearching || s.offline;
+    $('btn-find-alt').hidden = many || plan.kind !== 'direct' || altSearchDone || altSearching || s.offline ||
+      routingFor() === 'driving-car';
     $('btn-find-alt').disabled = s.busy;
     const box = $('opts');
     box.textContent = '';
