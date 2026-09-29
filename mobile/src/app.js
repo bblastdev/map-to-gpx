@@ -58,11 +58,13 @@
   ];
   const paceFor = (id) => (PROFILES.find((p) => p.id === id) || {}).pace || id;
   const orsFor = (id) => (PROFILES.find((p) => p.id === id) || {}).ors || id;
-  /* Which network a route is drawn on. A link Google planned for a car or a
-     motorcycle -- nearly every Indonesian one -- is copied on the roads a motor
-     vehicle takes, for a ride or a run alike; see Engine.route on the site.
-     Anything else routes on the activity's own profile. */
-  const routingFor = (profile) => C.plannedForVehicle(state.travelMode) ? 'driving-car' : orsFor(profile || state.profile);
+  /* Which network a route is drawn on: the one closest to what Google planned
+     the link for, for a ride or a run alike. Car and motorcycle links -- nearly
+     every Indonesian one -- on the roads a motor vehicle takes (Engine.route on
+     the site); bicycle links on the city-bike profile, as Google's bike
+     directions ride; anything else on the activity's own profile. */
+  const routingFor = (profile) => C.plannedForVehicle(state.travelMode) ? 'driving-car'
+    : state.travelMode === 'bicycling' ? 'cycling-regular' : orsFor(profile || state.profile);
   const ICON = {
     stepDone: 'f-check-circle', start: 'f-play-circle', mid: 'f-map-pin', finish: 'f-flag-checkered',
     valid: 'f-seal-check', invalid: 'f-warning', copy: 'b-copy', copied: 'b-check',
@@ -1219,7 +1221,8 @@
       const last = i === waypoints.length - 1;
       const row = el('div', 'stop' + (i === 0 ? ' start' : last ? ' end' : ''));
       const origin = w.source === 'nominatim' ? '  ·  geocoded name' : w.source === 'dragged' ? '  ·  moved by you'
-        : w.source === 'added' ? '  ·  added by you' : w.source === 'shared' ? '  ·  from a shared link' : '';
+        : w.source === 'added' ? '  ·  added by you' : w.source === 'shared' ? '  ·  from a shared link'
+        : w.source === 'google-via' ? '  ·  dragged in Google Maps' : '';
       const mid = el('span', 'mid');
       mid.append(el('span', 'lab', w.label || 'Stop'),
         el('span', 'sub', (typeof w.lat === 'number' ? w.lat.toFixed(4) + ', ' + w.lon.toFixed(4) : '—') + origin));

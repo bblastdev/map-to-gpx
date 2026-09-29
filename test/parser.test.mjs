@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 import { cleanViewbox } from '../lib/resolve-core.js';
-import { originAllowed, APP_ORIGINS } from '../lib/route-proxy.js';
+import { originAllowed, APP_ORIGINS, orsBody, MAX_SNAP_RADIUS } from '../lib/route-proxy.js';
 
 /* ── load the core out of index.html ──────────────────────────────────── */
 
@@ -690,6 +690,102 @@ test('a motorcycle link is read as planned for a vehicle, with its stops exact',
   for (const mode of ['bicycling', 'walking', 'transit', null, undefined]) {
     assert.equal(C.plannedForVehicle(mode), false, String(mode));
   }
+});
+
+test('points dragged into Google\'s route are kept, in the leg they were dragged in', () => {
+  /* Google's own canonical form, from Maps itself: stops as coordinates in the
+     path, and the blob keeps only the point the line was dragged through --
+     Purwokerto to Baturraden held through Sokaraja, 29.5 km instead of 13.9. */
+  const canonical = C.parseGoogleMapsUrl('https://www.google.com/maps/dir/-7.4244,109.2302/-7.3122,109.2278/@-7.4,109.25,12z/data=!4m8!4m7!1m4!3m3!1m2!1d109.2878!2d-7.4586!1m0!3e9?hl=en&entry=ttu');
+  assert.equal(canonical.travelMode, 'two-wheeler');
+  assert.deepEqual(canonical.waypoints.map((w) => [w.lat, w.lon]),
+    [[-7.4244, 109.2302], [-7.4586, 109.2878], [-7.3122, 109.2278]]);
+  assert.deepEqual(canonical.waypoints.map((w) => w.source === 'google-via'), [false, true, false]);
+  assert.equal(canonical.waypoints[1].kind, 'coords');
+
+  /* The long form: named stops with place ids and their own positions, a via
+     point carrying its place id too, and two on the second leg. */
+  const long = C.parseGoogleMapsUrl('https://www.google.com/maps/dir/Paris/Orleans/Lyon/data=!4m29!4m28!1m10!1m1!1s0x47e66e1f06e2b70f:0x40b82c3688c9460!2m2!1d2.3522!2d48.8566!3m4!1m2!1d2.1!2d48.4!3s0x0:0x1!1m13!1m1!1s0x47e4e4d85b1f8cb3:0x40dc8d705396cc0!2m2!1d1.9093!2d47.9029!3m3!1m2!1d2.5!2d47.2!3m3!1m2!1d3.9!2d46.5!1m5!1m1!1s0x47f4ea516ae88797:0x408ab2ae4bb21f0!2m2!1d4.8357!2d45.764!3e1');
+  assert.deepEqual(long.waypoints.map((w) => [w.lat, w.lon]),
+    [[48.8566, 2.3522], [48.4, 2.1], [47.9029, 1.9093], [47.2, 2.5], [46.5, 3.9], [45.764, 4.8357]]);
+  assert.deepEqual(long.waypoints.map((w) => w.source === 'google-via'), [false, true, false, true, true, false]);
+
+  /* the structure behind it */
+  const legs = C.parseDirectionsBlob('!4m8!4m7!1m4!3m3!1m2!1d109.2878!2d-7.4586!1m0!3e9');
+  assert.deepEqual(legs, [{ at: null, vias: [{ lat: -7.4586, lon: 109.2878 }] }, { at: null, vias: [] }]);
+  assert.equal(C.parseDirectionsBlob(''), null);
+  assert.equal(C.parseDirectionsBlob('!3m1!4b1'), null);
+
+  /* no dragged points: nothing added */
+  const plain = C.parseGoogleMapsUrl('https://www.google.com/maps/dir/-7.4244,109.2302/-7.3122,109.2278/data=!4m2!4m1!3e9');
+  assert.equal(plain.waypoints.length, 2);
+});
+
+test('the routing proxy forwards what a route needs to avoid, and nothing it should not', () => {
+  const coords = [[106.8272, -6.1754], [107.6188, -6.9025]];
+  /* the bug that reached the live site: avoid options were dropped, so a car
+     route standing in for a motorcycle one ran down the toll road */
+  const car = orsBody({ profile: 'driving-car', coordinates: coords,
+    options: { avoid_features: ['highways', 'tollways', 'steps', 'highways'] } });
+  assert.deepEqual(car.options, { avoid_features: ['highways', 'tollways'] });
+  /* a bike profile knows no highways or tollways -- ORS rejects them there */
+  const bike = orsBody({ profile: 'cycling-road', coordinates: coords, options: { avoid_features: ['highways', 'ferries'] } });
+  assert.deepEqual(bike.options, { avoid_features: ['ferries'] });
+  assert.equal(orsBody({ profile: 'driving-car', coordinates: coords, options: { avoid_features: 'tollways' } }).options, undefined);
+
+  /* snapping radius: per stop or one for all, capped, -1 meaning the cap */
+  assert.deepEqual(orsBody({ profile: 'driving-car', coordinates: coords, radiuses: [5000, 350] }).radiuses, [5000, 350]);
+  assert.deepEqual(orsBody({ profile: 'driving-car', coordinates: coords, radiuses: [-1] }).radiuses, [MAX_SNAP_RADIUS]);
+  assert.deepEqual(orsBody({ profile: 'driving-car', coordinates: coords, radiuses: [99999, 1] }).radiuses, [MAX_SNAP_RADIUS, 1]);
+  for (const bad of [[1, 2, 3], [0, 5], ['5000', 5000], 'all']) {
+    assert.equal(orsBody({ profile: 'driving-car', coordinates: coords, radiuses: bad }).radiuses, undefined, JSON.stringify(bad));
+  }
+
+  /* and the rest as before: alternatives only for A to B, nothing else passed through */
+  const plain = orsBody({ profile: 'cycling-road', coordinates: coords, alternative_routes: { target_count: 9 }, preference: 'shortest', extra: 1 });
+  assert.deepEqual(Object.keys(plain).sort(), ['alternative_routes', 'coordinates', 'elevation', 'instructions', 'units']);
+  assert.equal(plain.alternative_routes.target_count, 3);
+});
+
+test('the same way twice is seen as one way, however long it is', () => {
+  /* One 60 km road drawn twice, a point every 50 m and every 60 m -- as two ORS
+     answers for the same way come back. Sampled a fixed 80 times, the samples
+     fall ~700 m apart on each and the two looked a few hundred metres apart;
+     sampled by distance they are what they are, the same line. */
+  const line = [], twin = [];
+  for (let i = 0; i <= 1200; i++) line.push({ lat: -6.2 + i * 0.00045, lon: 106.8 });
+  for (let i = 0; i <= 1000; i++) twin.push({ lat: -6.2 + i * 0.00054, lon: 106.8 });
+  const n = C.samplesFor(twin);
+  assert.ok(n >= 200 && n <= twin.length, `got ${n} samples`);
+  assert.ok(C.mostDivergentPoint(twin, line, n).distance < 150);
+  /* never fewer than the 8 mostDivergentPoint itself insists on */
+  assert.equal(C.samplesFor([]), 8);
+  assert.equal(C.samplesFor([{ lat: 0, lon: 0 }, { lat: 0, lon: 0.001 }]), 8);
+});
+
+test('the way put first is the one Google most likely takes', () => {
+  /* Each case is a route measured against Google Maps: distance in km, ORS's
+     own time in minutes, and climbing in metres, for each way ORS offered. */
+  const way = (km, min, up) => ({ distance: km * 1000, duration: min * 60, ascent: up, ready: true });
+  /* Monas to Kebun Raya Bogor: Google 58.2 km */
+  assert.equal(C.preferredWay([way(60.3, 55.2, 506), way(58.0, 60.4, 431)]), 1);
+  /* Denpasar to Ubud: Google 23.1 km */
+  assert.equal(C.preferredWay([way(27.1, 21.4, 285), way(22.6, 23.1, 285), way(23.7, 24.0, 294)]), 1);
+  /* Purwokerto to Yogyakarta: Google takes the coast road, 174 km */
+  assert.equal(C.preferredWay([way(180.7, 134.0, 1037), way(175.8, 138.2, 937)]), 1);
+  /* Gedung Sate to Lembang: ORS's pick is Google's (Setiabudi, 15.4 km); the
+     shorter ways through Dago climb a fifth more */
+  assert.equal(C.preferredWay([way(15.5, 19.0, 558), way(13.4, 19.2, 670), way(13.7, 19.2, 670)]), 0);
+  /* Tugu to Borobudur: the shorter ways are a third slower */
+  assert.equal(C.preferredWay([way(41.2, 33.1, 368), way(39.3, 44.3, 510)]), 0);
+  /* Semarang to Salatiga: ORS and Google agree, the others are longer */
+  assert.equal(C.preferredWay([way(45.7, 47.8, 700), way(51.7, 56.6, 720)]), 0);
+
+  assert.equal(C.preferredWay([way(10, 10, 100)]), 0);
+  assert.equal(C.preferredWay([]), 0);
+  assert.equal(C.preferredWay([{ distance: 10000, duration: 0 }, way(5, 5, 0)]), 0);
+  /* a way not yet built is never put first */
+  assert.equal(C.preferredWay([way(60.3, 55.2, 506), Object.assign(way(58, 56, 400), { ready: false })]), 0);
 });
 
 test('divergentStretch marks where one line runs apart from another', () => {
