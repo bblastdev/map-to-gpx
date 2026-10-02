@@ -27,6 +27,12 @@ vm.runInThisContext(coreMatch[1], { filename: 'index.html#mtg-core' });
 const C = globalThis.MapToGPX;
 assert.ok(C, 'the core script must define globalThis.MapToGPX');
 
+/* The engine too, for the parts of it that decide without the network. */
+const engineMatch = /<script id="mtg-engine">([\s\S]*?)<\/script>/.exec(html);
+assert.ok(engineMatch, 'index.html must contain <script id="mtg-engine">');
+vm.runInThisContext(engineMatch[1], { filename: 'index.html#mtg-engine' });
+const E = globalThis.MTGEngine;
+
 /* ── the shipped page's own integrity ─────────────────────────────────── */
 
 test('every icon reference resolves to a sprite symbol', () => {
@@ -745,6 +751,30 @@ test('the routing proxy forwards what a route needs to avoid, and nothing it sho
   const plain = orsBody({ profile: 'cycling-road', coordinates: coords, alternative_routes: { target_count: 9 }, preference: 'shortest', extra: 1 });
   assert.deepEqual(Object.keys(plain).sort(), ['alternative_routes', 'coordinates', 'elevation', 'instructions', 'units']);
   assert.equal(plain.alternative_routes.target_count, 3);
+
+  /* the car's shortest route, one of the ways round on a car or motorcycle link */
+  assert.equal(orsBody({ profile: 'driving-car', coordinates: coords, preference: 'shortest' }).preference, 'shortest');
+  assert.equal(orsBody({ profile: 'driving-car', coordinates: coords, preference: 'recommended' }).preference, undefined);
+});
+
+test('the shortest car route joins the ways round only when it is another, plausible road', () => {
+  /* ~11 km due south; a second road 0.02° (~2.2 km) east of it */
+  const line = (lon) => Array.from({ length: 50 }, (_, i) => ({ lat: -7.4 - i * 0.002, lon }));
+  const plan = () => ({ options: [{ points: line(109.23), distance: 11000, duration: 900, ready: true }] });
+
+  let p = plan();
+  E.addShortest(p, { points: line(109.2305), distance: 10500, duration: 1200 });
+  assert.equal(p.options.length, 1, 'the same road, 55 m over, is not another way round');
+
+  p = plan();
+  E.addShortest(p, { points: line(109.25), distance: 10000, duration: 1350 });
+  assert.equal(p.options.length, 2, 'another road, half as slow again, is offered');
+  assert.equal(p.options[1].id, 1);
+  assert.equal(p.options[1].ready, true);
+
+  p = plan();
+  E.addShortest(p, { points: line(109.25), distance: 9000, duration: 1900 });
+  assert.equal(p.options.length, 1, 'more than twice the quickest time is a back-lane route, not offered');
 });
 
 test('the same way twice is seen as one way, however long it is', () => {

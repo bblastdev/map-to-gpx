@@ -1172,7 +1172,8 @@
     const many = opts.length > 1;
     $('opt-count').textContent = many ? opts.length + ' ways round' : 'One way round';
     $('opt-note').textContent = s.offline ? 'Other ways round need a connection. The ticked one is the route saved on this phone.'
-      : many ? (plan.kind === 'corridor' ? 'Ways round from OpenRouteService — the ride is built along the one you pick' : 'Alternatives from OpenRouteService, not from Google')
+      : many ? (routingFor() === 'driving-car' ? C.VEHICLE_WAYS_NOTE
+        : plan.kind === 'corridor' ? 'Ways round from OpenRouteService — the ride is built along the one you pick' : 'Alternatives from OpenRouteService, not from Google')
       : altSearching ? 'Looking for other ways round on the road network…'
       : plan.restored && plan.kind === 'direct' && !altSearchDone ? 'This is the route saved on this phone. Other ways round are looked up again when you ask.'
       : plan.kind === 'single' ? 'Alternatives only come back for a plain two-stop route. Remove the stops in between to see other ways round.'

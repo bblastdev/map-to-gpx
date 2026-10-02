@@ -1638,6 +1638,10 @@ globalThis.MapToGPX = (function () {
     return best;
   }
 
+  /** Under the ways round of a car or motorcycle link, on the site and in the app alike. */
+  const VEHICLE_WAYS_NOTE = 'Google\'s first route between roads like these changes with the traffic, so it can be ' +
+    'any one of them. If none is Google\'s road, add a stop on it in Google Maps and paste the new link.';
+
   /** `count` points spread evenly inside points[start..end], each with its index. */
   function pointsAlongStretch(points, start, end, count) {
     const cum = cumulativeDistances(points);
@@ -2026,7 +2030,7 @@ globalThis.MapToGPX = (function () {
     isShortLink, parseGoogleMapsUrl, parseDataBlobCoords, parseDirectionsBlob, parseGeocodeParam, parseLatLng, decodeSegment,
     suggestProfile, plannedForVehicle, haversine, dedupePoints, cumulativeDistances, elevationStats,
     interpolate, splitPoints, sampleAlongTrack, distanceToTrack, mostDivergentPoint, corridorPinCount,
-    samplesFor, divergentStretch, pointsAlongStretch, preferredWay,
+    samplesFor, divergentStretch, pointsAlongStretch, preferredWay, VEHICLE_WAYS_NOTE,
     bearingTo, destination, detourPoint, distanceTargets,
     zoomRadiusKm, plausibleFromViewportKm, viewboxAround, nearestCandidate,
     NAMED_LEG_LIMIT_KM, implausibleNamedLeg,
@@ -2292,6 +2296,7 @@ globalThis.MapToGPX = (function () {
       if (opts && opts.alternatives && coords.length === 2) {
         payload.alternative_routes = { target_count: 3, weight_factor: 1.6, share_factor: 0.6 };
       }
+      if (opts && opts.preference === 'shortest') payload.preference = 'shortest';
       /* Corridors are borrowed by a foot or bike profile, so the car must be kept
          off the roads those profiles are banned from. Without this the corridor
          runs down a motorway, every pin on it snaps a few hundred metres to
@@ -2892,8 +2897,10 @@ globalThis.MapToGPX = (function () {
           if (!spot || spot.distance < 2000) { opt.label = opt === base ? 'Shorter and flatter' : 'Alternative'; }
           else {
             const hit = await this.nearestMappedPoint(spot);
+            /* A bare number up front is a house number or a road's ref -- "via 171,
+               Blimbing" -- and names nothing anyone would recognise. */
             const name = hit && hit.display
-              ? String(hit.display).split(',').slice(0, 2).join(',').trim()
+              ? String(hit.display).split(',').map((s) => s.trim()).filter((s) => s && !/^\d+\w?$/.test(s)).slice(0, 2).join(', ')
               : null;
             opt.label = name ? 'via ' + name : 'Alternative';
           }
@@ -2950,6 +2957,8 @@ globalThis.MapToGPX = (function () {
       const askSecond = () => this.orsDirections('cycling-regular', waypoints).catch(() => null);
       const apart = C.haversine(waypoints[0], waypoints[waypoints.length - 1]);
       let second = explore && (waypoints.length > 2 || apart > 75000) ? askSecond() : null;
+      /* The shortest car route is asked for every time, alongside; see addShortest. */
+      const shortest = explore ? this.orsDirections('driving-car', waypoints, { preference: 'shortest' }).catch(() => null) : null;
 
       let plan;
       try {
@@ -2995,6 +3004,11 @@ globalThis.MapToGPX = (function () {
         const geo = await second;
         const f = geo && geo.features && geo.features[0];
         if (f) await this.addCorridor(plan, this.featureToRoute(f), (m) => onProgress(m, 'route'));
+      }
+      if (shortest) {
+        const geo = await shortest;
+        const f = geo && geo.features && geo.features[0];
+        if (f) this.addShortest(plan, this.featureToRoute(f));
       }
       if (vehicle) {
         this.preferShorter(plan);
@@ -3094,6 +3108,25 @@ globalThis.MapToGPX = (function () {
         (C.mostDivergentPoint(built.points, o.points, C.samplesFor(built.points)) || {}).distance < 1000)) return;
 
       plan.options.push(Object.assign(built, { id: plan.options.length, label: null, ready: true, splitPoints: [] }));
+    },
+
+    /**
+     * ORS's shortest car route, as one more way round. On a motorcycle Google
+     * takes it more often than ORS's car would: Purwokerto to Kebumen, Google's
+     * first route is the 68.7 km one ORS rates 105 minutes against 57 for its
+     * own 74.4 km pick; Bandung to Kawah Putih, 49.2 km against 54.2. ORS times
+     * the small roads for a car, and on a bike or a motorbike they are not that
+     * much slower. Checked against Google on 30 routes, that is two more where
+     * Google's first route is in the list. Never twice the quickest way's time,
+     * which drops the back lanes Google does not take either (Purwokerto to
+     * Wangon, 2.4 times), and never the same road as a way already listed.
+     */
+    addShortest(plan, r) {
+      const quickest = Math.min(...plan.options.filter((o) => o.ready !== false && o.duration > 0).map((o) => o.duration));
+      if (!r.points || r.points.length < 2 || !(r.duration <= 2 * quickest)) return;
+      if (plan.options.some((o) => o.points &&
+        (C.mostDivergentPoint(r.points, o.points, C.samplesFor(r.points)) || {}).distance < 1000)) return;
+      plan.options.push(Object.assign(r, { id: plan.options.length, label: null, ready: true, splitPoints: [] }));
     },
 
     /** Put first the way round Google most likely draws; see preferredWay in the core. */
@@ -4277,6 +4310,10 @@ globalThis.MapToGPX = (function () {
         $('opt-count').textContent = many ? opts.length + ' ways round' : 'One way round';
         const optNote = () => {
           if (many) {
+            /* Google's own first route flips between roads like these with the
+               traffic (Bandung to Lembang: Setiabudi one day, Dago the next),
+               so no rule here can always pick it. A stop on the road settles it. */
+            if (routingFor() === 'driving-car') return C.VEHICLE_WAYS_NOTE;
             return plan.kind === 'corridor'
               ? 'Ways round from OpenRouteService — the ride is built along the one you pick'
               : 'Alternatives from OpenRouteService, not from Google';
