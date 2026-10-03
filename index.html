@@ -805,6 +805,24 @@
   </div>
 </div>
 
+<!--
+  Vercel Web Analytics: page views, no cookies. The script exists only on a
+  Vercel deployment; the 404 anywhere else, local dev included, is harmless.
+  A shared route rides in the address after #r= -- every stop, its name, maybe
+  someone's home -- so the hash is dropped before anything is sent, and of the
+  query only the utm_ tags that say where a visitor came from are kept.
+-->
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  window.va('beforeSend', (event) => {
+    const url = new URL(event.url);
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) if (!key.startsWith('utm_')) url.searchParams.delete(key);
+    return Object.assign({}, event, { url: String(url) });
+  });
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
