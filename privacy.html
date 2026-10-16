@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy — Map to GPX</title>
+<meta name="description" content="What Map to GPX sends where, what it keeps, and what it never collects.">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://map-to-gpx.com/privacy.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0b0b0b; --surf: #141414; --line: #2a2a26; --ink: #f2f1ea; --ink2: #a9a9a0; --ink3: #77776e; --acc: #fc4c02; --acid: #e9f53b; }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; background: var(--bg); color: var(--ink2); font: 400 16px/1.65 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  header { display: flex; align-items: center; gap: 12px; padding: 18px max(16px, calc((100vw - 720px) / 2)); border-bottom: 1px solid var(--line); }
+  header a { color: var(--ink); text-decoration: none; font: 800 15px/1 'Inter', sans-serif; letter-spacing: .02em; text-transform: uppercase; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { color: var(--ink); font: 800 clamp(34px, 7vw, 48px)/1.02 'Inter', sans-serif; letter-spacing: -.035em; margin: 0 0 12px; }
+  .when { color: var(--ink3); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 32px; }
+  .short { background: var(--surf); border-left: 3px solid var(--acid); padding: 18px 20px; color: var(--ink); margin: 0 0 40px; }
+  .short p { margin: 0; }
+  h2 { color: var(--ink); font: 700 13px/1.4 'Inter', sans-serif; letter-spacing: .12em; text-transform: uppercase; margin: 40px 0 12px; }
+  p, li { margin: 0 0 12px; }
+  ul { padding-left: 20px; margin: 0 0 12px; }
+  strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--ink); text-underline-offset: 3px; }
+  footer { border-top: 1px solid var(--line); color: var(--ink3); font-size: 13px; padding: 20px max(16px, calc((100vw - 720px) / 2)); }
+</style>
+</head>
+<body>
+<header><a href="/">Map to GPX</a></header>
+<main>
+  <h1>Privacy</h1>
+  <p class="when">Effective 16 October 2026</p>
+
+  <div class="short">
+    <p>Map to GPX has no accounts, no ads and no tracking. It sends only what it needs to build your route, and nothing about you is stored on its servers.</p>
+  </div>
+
+  <p>This covers the Map to GPX app for iPhone and Android and the website at map-to-gpx.com. Both are made by Mochamad Hakim Haiman.</p>
+
+  <h2>What leaves your device, and why</h2>
+  <ul>
+    <li><strong>Your directions link.</strong> A short maps.app.goo.gl link is expanded by Map to GPX's server, which asks Google for the full link. A stop given only by name is looked up on OpenStreetMap's Nominatim through the same server.</li>
+    <li><strong>Your stops.</strong> To build the route, the stops' coordinates go to Map to GPX's routing service, which asks <a href="https://openrouteservice.org/">OpenRouteService</a> (HeiGIT gGmbH) for the route and sends it back. The stops are not stored.</li>
+    <li><strong>Names along the route.</strong> To name the different ways round, a few points on them are looked up on Nominatim, through Map to GPX's server, or directly if that server cannot be reached.</li>
+    <li><strong>The map.</strong> Map tiles come from CARTO, with OpenStreetMap data.</li>
+  </ul>
+  <p>OpenRouteService, Nominatim, CARTO and Google receive these requests under their own privacy policies. When a request goes through Map to GPX's server, they see the server, not you.</p>
+
+  <h2>What the server keeps</h2>
+  <p>To keep the shared routing quota fair, the routing service counts requests per IP address for up to one hour. That count is deleted when the hour is up, without being recorded. Only the total number of routes per day is kept, with no IP address or route attached.</p>
+
+  <h2>What stays on your device</h2>
+  <p>Your last route, your settings and, if you add one, your own OpenRouteService key are stored on your phone or in your browser, so the route opens offline. They are never uploaded. Deleting the app, or clearing the site's data in your browser, removes them. With your own key, routes go straight from your device to OpenRouteService.</p>
+
+  <h2>Website analytics</h2>
+  <p>map-to-gpx.com counts page views with Vercel Web Analytics, which uses no cookies and does not identify you. A shared route in the page address is removed before anything is sent. The apps have no analytics.</p>
+  <p>The website also loads its typeface from Google Fonts and its map library from unpkg, which see your browser's request like any web page's.</p>
+
+  <h2>Sharing and selling</h2>
+  <p>Map to GPX does not sell or share your data, and does not use it for advertising.</p>
+
+  <h2>Changes</h2>
+  <p>If this changes, this page will be updated and the date above will change with it.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy: <a href="mailto:mohamadhakim56z@gmail.com?subject=Map%20to%20GPX%20privacy">mohamadhakim56z@gmail.com</a></p>
+</main>
+<footer>Map to GPX · <a href="/">Back to the app</a></footer>
+</body>
+</html>

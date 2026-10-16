@@ -4,4 +4,8 @@
     <loc>https://map-to-gpx.com/</loc>
     <changefreq>weekly</changefreq>
   </url>
+  <url>
+    <loc>https://map-to-gpx.com/privacy.html</loc>
+    <changefreq>yearly</changefreq>
+  </url>
 </urlset>
